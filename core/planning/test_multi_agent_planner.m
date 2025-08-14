@@ -13,26 +13,26 @@ function planned_trajectories = test_multi_agent_planner(agents, env_params, cur
     
     builder = ProblemBuilder(agents, env_params, current_params, sim_params, agent_params, config);
     
-    % --- Build Complete NLP ---
-    nlp = builder.getNLP();
-    [lbg, ubg] = builder.getConstraintBounds();
-    w0 = builder.getInitialGuess();
-    
     % --- Solver Options ---
     opts = struct;
-    opts.ipopt.print_level = 3;     % 0=quiet, 3=default, 5=verbose
+    opts.ipopt.print_level = 0;     % 0=quiet, 3=default, 5=verbose
     opts.ipopt.max_iter = 2000;     % Limit iterations
-    opts.ipopt.tol = 1e-6;         % Solver tolerance
+    opts.ipopt.tol = 1e-6;          % Solver tolerance
     opts.print_time = 1;
     opts.ipopt.warm_start_init_point = 'yes';
     opts.expand = true;
+
+    % --- Build Parameterized NLP ---
+    nlp = builder.getParameterizedNLP();
+    [lbg, ubg] = builder.getParameterizedConstraintBounds();
+    w0 = builder.getInitialGuess();
     
     solver = nlpsol('solver', 'ipopt', nlp, opts);
     
-    % --- Solve the NLP ---
+    % --- Solve the Parameterized NLP ---
     planned_trajectories = cell(length(agents), 1); % Initialize output
     try
-        sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'lbg', lbg, 'ubg', ubg);
+        sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', w0, 'lbg', lbg, 'ubg', ubg);
         
         % --- Process Solution ---
         stats = solver.stats();

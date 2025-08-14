@@ -1,6 +1,6 @@
 % create_symbolic_ocean_func.m
-% function [ocean_func, ocean_linear_approx_func] = create_symbolic_ocean_func(current_params, use_mx)
-function [ocean_func] = create_symbolic_ocean_func(current_params, use_mx)
+function [ocean_func, ocean_gradient_func] = create_symbolic_ocean_func(current_params, use_mx)
+% function [ocean_func] = create_symbolic_ocean_func(current_params, use_mx)
 % CREATE_SYMBOLIC_OCEAN_FUNC Creates symbolic CasADi functions for ocean current calculation.
 %
 % Inputs:
@@ -22,66 +22,73 @@ function [ocean_func] = create_symbolic_ocean_func(current_params, use_mx)
 
     % Symbolic variables
     P = V.sym('P', 2, 1);   % Current position (2x1)
-    P0 = V.sym('P0', 2, 1); % Reference position for linearization (2x1)
+    % P0 = V.sym('P0', 2, 1); % Reference position for linearization (2x1)
     t = V.sym('t', 1, 1);   % Time
 
-    % Initialize total velocity
-    u_total = 0;
-    v_total = 0;
+    current_vec = cell(1, current_params.num_ensemble_members);
+    J = cell(1, current_params.num_ensemble_members);
+    outputCurrentNames = cell(1, current_params.num_ensemble_members);
+    outputGradientNames = cell(1, current_params.num_ensemble_members);
 
-    % --- Calculate Current for Each Vortex ---
-    for i = 1:length(current_params.vortices)
-        vortex = current_params.vortices(i);
-        
-        % Get base vortex parameters
-        x0_base = vortex.center(1);
-        y0_base = vortex.center(2);
-        Gamma_base = vortex.strength;
-        R_vortex = vortex.core_radius;
+    for j = 1:current_params.num_ensemble_members
+        % Initialize total velocity
+        u_total = 0;
+        v_total = 0;
 
-        % Handle time-varying behavior if needed
-        if strcmp(current_params.type, 'time_varying')
-            % Example: Oscillating vortex center and strength
-            x0 = x0_base + 5 * sin(0.1 * t);
-            y0 = y0_base + 3 * cos(0.07 * t);
-            Gamma = Gamma_base * (1 + 0.1*cos(0.05*t));
-        else
-            x0 = x0_base;
-            y0 = y0_base;
-            Gamma = Gamma_base;
+        % --- Calculate Current for Each Vortex ---
+        for i = 1:length(current_params.vortices)
+            vortex = current_params.vortices(i);
+            
+            % Get base vortex parameters
+            x0_base = vortex.center(1);
+            y0_base = vortex.center(2);
+            Gamma_base = vortex.strength;
+            R_vortex = vortex.core_radius;
+
+            % Handle time-varying behavior if needed
+            if strcmp(current_params.type, 'time_varying')
+                % Example: Oscillating vortex center and strength
+                x0 = x0_base + 5 * sin(0.1 * t);
+                y0 = y0_base + 3 * cos(0.07 * t);
+                Gamma = Gamma_base * (1 + 0.1*cos(0.05*t));
+            else
+                x0 = x0_base;
+                y0 = y0_base;
+                Gamma = Gamma_base;
+            end
+
+            % Calculate position relative to vortex center
+            dx = P(1) - x0;
+            dy = P(2) - y0;
+            r_sq = dx^2 + dy^2;
+
+            % Calculate vortex-induced velocity (Lamb-Oseen profile)
+            % Use if_else for symbolic conditional
+            r = sqrt(r_sq + eps); % Add small constant to avoid division by zero
+            v_theta = (Gamma / (2 * pi * r)) * (1 - exp(-r_sq / R_vortex^2));
+            
+            % Convert to Cartesian components
+            u_vortex = -v_theta * dy / r;
+            v_vortex = v_theta * dx / r;
+            
+            % Add to total velocity
+            u_total = u_total + u_vortex;
+            v_total = v_total + v_vortex;
         end
 
-        % Calculate position relative to vortex center
-        dx = P(1) - x0;
-        dy = P(2) - y0;
-        r_sq = dx^2 + dy^2;
-
-        % Calculate vortex-induced velocity (Lamb-Oseen profile)
-        % Use if_else for symbolic conditional
-        r = sqrt(r_sq + eps); % Add small constant to avoid division by zero
-        v_theta = (Gamma / (2 * pi * r)) * (1 - exp(-r_sq / R_vortex^2));
-        
-        % Convert to Cartesian components
-        u_vortex = -v_theta * dy / r;
-        v_vortex = v_theta * dx / r;
-        
-        % Add to total velocity
-        u_total = u_total + u_vortex;
-        v_total = v_total + v_vortex;
+        % --- Create Original Function ---
+        current_vec{j} = (eye(2) + diag(randn(2, 1) * current_params.noise_level)) *[u_total; v_total] ;
+        % --- Compute Jacobian with respect to position P ---
+        J{j} = jacobian(current_vec{j}, P);  % 2x2 matrix
+        outputCurrentNames{j} = ['current_out_', num2str(j)];
+        outputGradientNames{j} = ['gradient_out_', num2str(j)];
     end
 
-    % --- Create Original Function ---
-    current_vec = [u_total; v_total];
-    
     ocean_func_single = Function('ocean_current_single', ...
         {P, t}, ...
-        {current_vec}, ...
+        current_vec, ...
         {'pos_in', 't_in'}, ...
-        {'current_out'});
-
-    % --- Create Linear Approximation Function ---
-    % Compute Jacobian with respect to position P
-    % J = jacobian(current_vec, P);  % 2x2 matrix
+        outputCurrentNames);
     
     % For linear approximation, we need to evaluate current and Jacobian at P0
     % Create the linear approximation expression directly
@@ -113,9 +120,16 @@ function [ocean_func] = create_symbolic_ocean_func(current_params, use_mx)
     %     {'pos_in', 'pos_ref', 't_in'}, ...
     %     {'current_out'});
 
+    ocean_gradient_func = Function('ocean_gradient_single', ... % Name the base function
+        {P, t}, ...
+        J, ...
+        {'pos_in', 't_in'}, ...
+        outputGradientNames);
+
     % --- Create Mapped Functions ---
     % Map over the first input ('pos_in') using serial execution
     ocean_func = ocean_func_single.map(1, 'serial');
     % ocean_linear_approx_func = ocean_linear_func_single.map(1, 'serial');
+    ocean_gradient_func = ocean_gradient_func.map(1, 'serial');
 
 end 

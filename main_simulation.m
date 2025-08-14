@@ -1,11 +1,17 @@
+% Start profiling
+% profile on -detail builtin -timer performance
+
+% rng
+rng(3,"philox")
+
 % main_simulation.m
 clear; clc; close all;
 
 fprintf('Setting up simulation parameters...\n');
 
 % --- Simulation Parameters ---
-sim_params.dt = 1;                     % Simulation time step (s)
-sim_params.T_final = 500;                % Total simulation time (s)
+sim_params.dt = 1;                       % Simulation time step (s)
+sim_params.T_final = 400;                % Total simulation time (s)
 sim_params.time_steps = floor(sim_params.T_final / sim_params.dt);
 sim_params.visualization = true;         % Enable/disable visualization
 sim_params.vis_interval = 20;             % Update visualization every N steps (adjust as needed)
@@ -25,11 +31,12 @@ env_params.obstacles = struct('center', {}, 'radius', {}); % Obstacles structure
 
 % --- Ocean Current Parameters ---
 current_params.type = 'static';           % 'static' or 'time_varying'
-current_params.noise_level = 0;         % Standard deviation of noise added to current estimate
-current_params.gradient_noise_level = 0; % *** ADDED: Std dev of noise for each gradient component ***
 current_params.vortices = struct('center', {}, 'strength', {}, 'core_radius', {});
 current_params.vortices(1) = struct('center', [10; 10], 'strength', 25*4, 'core_radius', 20);
 current_params.vortices(2) = struct('center', [-15; -15], 'strength', -20*4, 'core_radius', 30);
+current_params.num_ensemble_members = 20;
+current_params.noise_level = 0.2;         % Standard deviation of noise added to current estimate
+current_params.gradient_noise_level = 0; % *** ADDED: Std dev of noise for each gradient component ***
 
 % --- Agent Parameters ---
 num_agents = 4;
@@ -206,8 +213,14 @@ for t_idx = 1:sim_params.time_steps
     if mod(t_idx - 1, sim_params.replan_interval) == 0 || t_idx == 1
         fprintf('Step %d (t=%.1f): Re-planning...\n', t_idx, current_time);
 
-        planned_trajectories = test_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
+        planned_trajectories = sca_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
         
+        % Stop and view results
+        % profile off
+        % profile viewer
+        % profview  % Alternative viewer
+        % profsave
+
         % Distribute the plan (or fallback)
         for i = 1:num_agents
             if ~isempty(planned_trajectories{i}) && isfield(planned_trajectories{i}, 'planned_positions') && size(planned_trajectories{i}.planned_positions, 2) > 1

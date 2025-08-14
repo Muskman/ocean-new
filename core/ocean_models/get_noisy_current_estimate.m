@@ -30,11 +30,11 @@ function [estimated_current_cell, estimated_gradient_cell] = get_noisy_current_e
 
     if recreate_current
         fprintf('Creating/Recreating symbolic CasADi current function...\n');
-        sym_ocean_current_func = create_symbolic_ocean_func(current_params, false); % Use SX for evaluation
+        [sym_ocean_current_func, sym_ocean_gradient_func] = create_symbolic_ocean_func(current_params, false); % Use SX for evaluation
     end
     if recreate_gradient
          fprintf('Creating/Recreating symbolic CasADi gradient function...\n');
-         sym_ocean_gradient_func = create_symbolic_ocean_gradient_func(current_params, false); % Use SX for evaluation
+        %  sym_ocean_gradient_func = create_symbolic_ocean_gradient_func(current_params, false); % Use SX for evaluation
     elseif ~calculate_gradient
          sym_ocean_gradient_func = []; % Ensure it's empty if not needed
     end
@@ -46,14 +46,14 @@ function [estimated_current_cell, estimated_gradient_cell] = get_noisy_current_e
     % --- Evaluate Functions --- 
     % Evaluate current function (numerically)
     current_eval = sym_ocean_current_func('pos_in', positions, 't_in', time);
-    true_current_matrix = full(current_eval.current_out);
+    true_current_matrix = full(current_eval.current_out_1); % taking the first current ensemble member
 
     % Evaluate gradient function if requested
     true_gradient_cell = cell(1, N_points);
     if calculate_gradient && ~isempty(sym_ocean_gradient_func)
         try
             gradient_eval = sym_ocean_gradient_func('pos_in', positions, 't_in', time);
-            temp_gradient_cell = gradient_eval.gradient_out;
+            temp_gradient_cell = gradient_eval.gradient_out_1; % taking the first gradient ensemble member
             % Convert CasADi cell to MATLAB cell, applying full()
             for i = 1:N_points
                 true_gradient_cell{i} = full(temp_gradient_cell{i});

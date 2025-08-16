@@ -26,13 +26,15 @@ function planned_trajectories = test_multi_agent_planner(agents, env_params, cur
     nlp = builder.getParameterizedNLP();
     [lbg, ubg] = builder.getParameterizedConstraintBounds();
     w0 = builder.getInitialGuess();
+    builder.ensemble_samples = ones(current_params.num_ensemble_members, 1);
     
     solver = nlpsol('solver', 'ipopt', nlp, opts);
     
     % --- Solve the Parameterized NLP ---
     planned_trajectories = cell(length(agents), 1); % Initialize output
     try
-        sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', w0, 'lbg', lbg, 'ubg', ubg);
+        p0 = [w0; builder.ensemble_samples];
+        sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', p0, 'lbg', lbg, 'ubg', ubg);
         
         % --- Process Solution ---
         stats = solver.stats();

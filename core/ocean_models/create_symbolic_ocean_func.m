@@ -25,10 +25,13 @@ function [ocean_func, ocean_gradient_func] = create_symbolic_ocean_func(current_
     % P0 = V.sym('P0', 2, 1); % Reference position for linearization (2x1)
     t = V.sym('t', 1, 1);   % Time
 
-    current_vec = cell(1, current_params.num_ensemble_members);
-    J = cell(1, current_params.num_ensemble_members);
-    outputCurrentNames = cell(1, current_params.num_ensemble_members);
-    outputGradientNames = cell(1, current_params.num_ensemble_members);
+    current_vec = cell(1, current_params.num_ensemble_members+1);
+    J = cell(1, current_params.num_ensemble_members+1);
+    outputCurrentNames = cell(1, current_params.num_ensemble_members+1);
+    outputGradientNames = cell(1, current_params.num_ensemble_members+1);
+
+    current_vec{end} = V.zeros(2, 1);
+    J{end} = V.zeros(2, 2);
 
     for j = 1:current_params.num_ensemble_members
         % Initialize total velocity
@@ -82,7 +85,13 @@ function [ocean_func, ocean_gradient_func] = create_symbolic_ocean_func(current_
         J{j} = jacobian(current_vec{j}, P);  % 2x2 matrix
         outputCurrentNames{j} = ['current_out_', num2str(j)];
         outputGradientNames{j} = ['gradient_out_', num2str(j)];
+
+        current_vec{end} = current_vec{end} + current_vec{j}/current_params.num_ensemble_members;
+        J{end} = J{end} + J{j}/current_params.num_ensemble_members;
     end
+
+    outputCurrentNames{end} = 'current_out_avg';
+    outputGradientNames{end} = 'gradient_out_avg';
 
     ocean_func_single = Function('ocean_current_single', ...
         {P, t}, ...

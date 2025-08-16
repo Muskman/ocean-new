@@ -15,8 +15,10 @@ classdef ProblemBuilder < handle
         
         % Symbolic template system
         P0_sym                              % Symbolic reference trajectory (2*N_agents x T+1)
-        symbolic_objective_template         % Symbolic objective f(P_sym, P0_sym)
-        symbolic_control_constraints_template % Cell array of symbolic constraints g(P_sym, P0_sym)
+        ensemble_samples_sym                % Symbolic ensemble sample indicator (num_ensemble_members x 1)
+        symbolic_objective_template         % Symbolic objective f(P_sym, P0_sym, ensemble_samples_sym)
+        symbolic_control_constraints_template   % Cell array of symbolic constraints g(P_sym, P0_sym)
+        
         
         % Template metadata
         templates_built                     % Boolean flag
@@ -38,6 +40,9 @@ classdef ProblemBuilder < handle
         
         % Reference trajectory (needed for parameterized NLP)
         P0              % Reference for linearization
+
+        % Ensemble samples
+        ensemble_samples
     end
     
     methods
@@ -63,6 +68,7 @@ classdef ProblemBuilder < handle
             obj.N_agents = length(agents);
             obj.T = sim_params.planning_horizon;
             obj.dt = sim_params.dt;
+            obj.ensemble_samples_sym = [];
             
             % Safety margin (from original code)
             obj.safety_margin = 0.2;
@@ -149,7 +155,8 @@ classdef ProblemBuilder < handle
             
             % Create symbolic reference trajectory
             obj.P0_sym = MX.sym('P0', 2*obj.N_agents, obj.T+1);
-            
+            obj.ensemble_samples_sym = MX.sym('ensemble_samples', obj.current_params.num_ensemble_members);
+
             % Build symbolic objective and control constraints template
             obj.symbolic_objective_template = 0;
             obj.symbolic_control_constraints_template = {};
@@ -164,6 +171,7 @@ classdef ProblemBuilder < handle
                 P_k = obj.P_sym(:, k+1);        % Current state
                 P_k_plus_1 = obj.P_sym(:, k+2); % Next state
                 P0_k = obj.P0_sym(:, k+1);      % Symbolic reference
+                disp_ground = P_k_plus_1 - P_k;
                 
                 % Reshape to matrix form for ocean functions
                 Pos_k_matrix = reshape(P_k, 2, obj.N_agents);
@@ -180,6 +188,10 @@ classdef ProblemBuilder < handle
                 end
 
                 for i = 1:obj.current_params.num_ensemble_members
+                    
+                    % Get current ensemble sample indicator
+                    s = obj.ensemble_samples_sym(i)/sum(obj.ensemble_samples_sym);
+
                     % Calculate currents using linear approximation template
                     if obj.config.use_linear_approximation
                         % Template Per-agent linear approximation
@@ -187,17 +199,16 @@ classdef ProblemBuilder < handle
                         for j = 1:obj.N_agents
                             Currents_k_matrix{i}(:, j) = Currents_at_P0_sym{i}(:, j) + Js_at_P0_sym{i}(:, 2*(j-1)+1:2*j) * pose_diff(:, j);
                         end
-                        Currents_k_matrix_avg = Currents_k_matrix_avg + Currents_k_matrix{i}/obj.current_params.num_ensemble_members;
                     end
                     
                     % Build template objective contribution
                     Currents_k_vec = reshape(Currents_k_matrix{i}, 2*obj.N_agents, 1);
-                    disp_ground = P_k_plus_1 - P_k;
                     disp_control = disp_ground - Currents_k_vec * obj.dt;
                     disp_control_matrix = reshape(disp_control, 2, obj.N_agents);
                     
                     % Accumulate objective in symbolic template
-                    obj.symbolic_objective_template = obj.symbolic_objective_template + sumsqr(disp_control_matrix)/obj.current_params.num_ensemble_members;
+                    % Skip if ensemble sample indicator is 0
+                    obj.symbolic_objective_template = obj.symbolic_objective_template + if_else(obj.ensemble_samples_sym(i)==1, s*sumsqr(disp_control_matrix), 0);
                     
                     % Per-agent control constraints
                     if ~obj.config.use_linear_approximation
@@ -208,6 +219,9 @@ classdef ProblemBuilder < handle
                 end
 
                 if obj.config.use_linear_approximation
+                    for j = 1:obj.N_agents
+                        Currents_k_matrix_avg(:, j) = Currents_at_P0_sym{end}(:, j) + Js_at_P0_sym{end}(:, 2*(j-1)+1:2*j) * pose_diff(:, j);
+                    end
                     Currents_k_vec_avg = reshape(Currents_k_matrix_avg, 2*obj.N_agents, 1);
                     disp_control_avg = disp_ground - Currents_k_vec_avg * obj.dt;
                     disp_control_matrix_avg = reshape(disp_control_avg, 2, obj.N_agents);
@@ -310,8 +324,8 @@ classdef ProblemBuilder < handle
             % Decision variables (MX)
             w = obj.P_sym(:);
             
-            % Parameters (MX) - reference trajectory P0
-            p = obj.P0_sym(:);
+            % Parameters (MX) - reference trajectory P0 and ensemble sample indicator
+            p = [obj.P0_sym(:); obj.ensemble_samples_sym(:)];
             
             % Objective function (MX expression, not Function)
             f = obj.symbolic_objective_template;
@@ -544,6 +558,7 @@ classdef ProblemBuilder < handle
             config.enable_formation_constraints = true;
             config.collision_method = 'minimum_distance'; % 'minimum_distance' or 'pairwise'
             config.use_linear_approximation = false;
+            config.use_stochastic_sampling = false;
         end
     end
 end 

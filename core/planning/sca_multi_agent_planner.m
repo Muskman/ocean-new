@@ -49,7 +49,12 @@ function planned_trajectories = sca_multi_agent_planner(agents, env_params, curr
         planned_trajectories = cell(length(agents), 1); % Initialize output
         try
             % Pass current P0 as parameter to solver
-            sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', w0, 'lbg', lbg, 'ubg', ubg);
+            builder.ensemble_samples = zeros(current_params.num_ensemble_members, 1);
+            sample_idx = randi(current_params.num_ensemble_members,1,1);
+            builder.ensemble_samples(sample_idx) = 1;
+
+            p0 = [w0; builder.ensemble_samples];
+            sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', p0, 'lbg', lbg, 'ubg', ubg);
             
             % --- Process Solution ---
             stats = solver.stats();

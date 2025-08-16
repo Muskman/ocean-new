@@ -46,14 +46,14 @@ function [estimated_current_cell, estimated_gradient_cell] = get_noisy_current_e
     % --- Evaluate Functions --- 
     % Evaluate current function (numerically)
     current_eval = sym_ocean_current_func('pos_in', positions, 't_in', time);
-    true_current_matrix = full(current_eval.current_out_1); % taking the first current ensemble member
+    true_current_matrix = full(current_eval.current_out_avg); % taking the first current ensemble member
 
     % Evaluate gradient function if requested
     true_gradient_cell = cell(1, N_points);
     if calculate_gradient && ~isempty(sym_ocean_gradient_func)
         try
             gradient_eval = sym_ocean_gradient_func('pos_in', positions, 't_in', time);
-            temp_gradient_cell = gradient_eval.gradient_out_1; % taking the first gradient ensemble member
+            temp_gradient_cell = gradient_eval.gradient_out_avg; % taking the first gradient ensemble member
             % Convert CasADi cell to MATLAB cell, applying full()
             for i = 1:N_points
                 true_gradient_cell{i} = full(temp_gradient_cell{i});

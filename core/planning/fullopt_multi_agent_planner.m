@@ -1,7 +1,6 @@
 % test_multi_agent_planner.m
-function planned_trajectories = test_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params)
-    % TEST_MULTI_AGENT_PLANNER Solves the trajectory planning problem using ProblemBuilder class.
-    % This is a test version that uses the modular ProblemBuilder approach.
+function planned_trajectories = fullopt_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params)
+    % solve full optimization problem for multi-agent planning
     
     import casadi.*
     

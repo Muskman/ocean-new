@@ -1,7 +1,6 @@
 % sca_multi_agent_planner.m
 function planned_trajectories = sca_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params)
-    % TEST_MULTI_AGENT_PLANNER Solves the trajectory planning problem using ProblemBuilder class.
-    % This is a test version that uses the modular ProblemBuilder approach.
+    % SCA and stochastic-SCAalgorithm for multi-agent trajectory planning
     
     import casadi.*
     
@@ -49,9 +48,13 @@ function planned_trajectories = sca_multi_agent_planner(agents, env_params, curr
         planned_trajectories = cell(length(agents), 1); % Initialize output
         try
             % Pass current P0 as parameter to solver
-            builder.ensemble_samples = zeros(current_params.num_ensemble_members, 1);
-            sample_idx = randi(current_params.num_ensemble_members,1,1);
-            builder.ensemble_samples(sample_idx) = 1;
+            if strcmp(sim_params.algo, 'ssca')
+                builder.ensemble_samples = zeros(current_params.num_ensemble_members, 1);
+                sample_idx = randi(current_params.num_ensemble_members,1,1);
+                builder.ensemble_samples(sample_idx) = 1;
+            else
+                builder.ensemble_samples = ones(current_params.num_ensemble_members, 1);
+            end
 
             p0 = [w0; builder.ensemble_samples];
             sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', p0, 'lbg', lbg, 'ubg', ubg);

@@ -26,9 +26,9 @@ function [U_total, V_total] = calculate_ocean_current_vectorized(positions, time
 
         % Adjust vortex parameters for time variance
         if strcmp(current_params.type, 'time_varying')
-             x0 = x0 + 5 * sin(0.1 * time);
-             y0 = y0 + 3 * cos(0.07 * time);
-             Gamma = Gamma * (1 + 0.1*cos(0.05*time));
+             x0 = x0 + 5 * sin(0.1 * time/2);
+             y0 = y0 + 3 * cos(0.07 * time/2);
+             Gamma = Gamma * (1 + 0.1*cos(0.05*time/2));
         end
 
         % Calculate distances for all points relative to this vortex

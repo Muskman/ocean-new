@@ -17,9 +17,9 @@ function current = calculate_ocean_current(position, time, current_params)
         % TODO: Add time-varying behavior if needed (e.g., move centers, change strength)
         if strcmp(current_params.type, 'time_varying')
              % Example: Oscillating vortex center
-             x0 = x0 - 5 * sin(0.1 * time);
-             y0 = y0 + 3 * cos(0.7 * time); % Keep y constant or make it vary too
-             Gamma = Gamma * (1 + 0.1*cos(0.5*time)); % Varying strength
+             x0 = x0 - 5 * sin(0.1 * time/2);
+             y0 = y0 + 3 * cos(0.07 * time/2); % Keep y constant or make it vary too
+             Gamma = Gamma * (1 + 0.1*cos(0.05*time/2)); % Varying strength
         end
 
         r_sq = (x - x0)^2 + (y - y0)^2;

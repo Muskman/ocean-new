@@ -25,15 +25,15 @@ function [ocean_func, ocean_gradient_func] = create_symbolic_ocean_func(current_
     % P0 = V.sym('P0', 2, 1); % Reference position for linearization (2x1)
     t = V.sym('t', 1, 1);   % Time
 
-    current_vec = cell(1, current_params.num_ensemble_members+1);
-    J = cell(1, current_params.num_ensemble_members+1);
-    outputCurrentNames = cell(1, current_params.num_ensemble_members+1);
-    outputGradientNames = cell(1, current_params.num_ensemble_members+1);
+    current_vec = cell(1, current_params.num_ensemble_members+1+current_params.num_ensemble_members_test);
+    J = cell(1, current_params.num_ensemble_members+1+current_params.num_ensemble_members_test);
+    outputCurrentNames = cell(1, current_params.num_ensemble_members+1+current_params.num_ensemble_members_test);
+    outputGradientNames = cell(1, current_params.num_ensemble_members+1+current_params.num_ensemble_members_test);
 
-    current_vec{end} = V.zeros(2, 1);
-    J{end} = V.zeros(2, 2);
+    current_vec{current_params.num_ensemble_members+1} = V.zeros(2, 1);
+    J{current_params.num_ensemble_members+1} = V.zeros(2, 2);
 
-    for j = 1:current_params.num_ensemble_members
+    for j = 1:current_params.num_ensemble_members+1+current_params.num_ensemble_members_test
         % Initialize total velocity
         u_total = 0;
         v_total = 0;
@@ -51,9 +51,9 @@ function [ocean_func, ocean_gradient_func] = create_symbolic_ocean_func(current_
             % Handle time-varying behavior if needed
             if strcmp(current_params.type, 'time_varying')
                 % Example: Oscillating vortex center and strength
-                x0 = x0_base + 5 * sin(0.1 * t);
-                y0 = y0_base + 3 * cos(0.07 * t);
-                Gamma = Gamma_base * (1 + 0.1*cos(0.05*t));
+                x0 = x0_base + 5 * sin(0.1 * t/2);
+                y0 = y0_base + 3 * cos(0.07 * t/2);
+                Gamma = Gamma_base * (1 + 0.1*cos(0.05*t/2));
             else
                 x0 = x0_base;
                 y0 = y0_base;
@@ -80,18 +80,26 @@ function [ocean_func, ocean_gradient_func] = create_symbolic_ocean_func(current_
         end
 
         % --- Create Original Function ---
-        current_vec{j} = (eye(2) + diag(randn(2, 1) * current_params.noise_level)) *[u_total; v_total] ;
-        % --- Compute Jacobian with respect to position P ---
-        J{j} = jacobian(current_vec{j}, P);  % 2x2 matrix
-        outputCurrentNames{j} = ['current_out_', num2str(j)];
-        outputGradientNames{j} = ['gradient_out_', num2str(j)];
+        if j <= current_params.num_ensemble_members
+            current_vec{j} = (eye(2) + diag(randn(2, 1) * current_params.noise_level)) *[u_total; v_total] ;
+            % --- Compute Jacobian with respect to position P ---
+            J{j} = jacobian(current_vec{j}, P);  % 2x2 matrix
+            outputCurrentNames{j} = ['current_out_', num2str(j)];
+            outputGradientNames{j} = ['gradient_out_', num2str(j)];
 
-        current_vec{end} = current_vec{end} + current_vec{j}/current_params.num_ensemble_members;
-        J{end} = J{end} + J{j}/current_params.num_ensemble_members;
+            current_vec{current_params.num_ensemble_members+1} = current_vec{current_params.num_ensemble_members+1} + current_vec{j}/current_params.num_ensemble_members;
+            J{current_params.num_ensemble_members+1} = J{current_params.num_ensemble_members+1} + J{j}/current_params.num_ensemble_members;
+        else
+            current_vec{j+1} = (eye(2) + diag(randn(2, 1) * current_params.noise_level)) *[u_total; v_total] ;
+            % --- Compute Jacobian with respect to position P ---
+            J{j+1} = jacobian(current_vec{j+1}, P);  % 2x2 matrix
+            outputCurrentNames{j+1} = ['current_test_', num2str(j-current_params.num_ensemble_members)];
+            outputGradientNames{j+1} = ['gradient_test_', num2str(j-current_params.num_ensemble_members)];
+        end
     end
 
-    outputCurrentNames{end} = 'current_out_avg';
-    outputGradientNames{end} = 'gradient_out_avg';
+    outputCurrentNames{current_params.num_ensemble_members+1} = 'current_out_avg';
+    outputGradientNames{current_params.num_ensemble_members+1} = 'gradient_out_avg';
 
     ocean_func_single = Function('ocean_current_single', ...
         {P, t}, ...

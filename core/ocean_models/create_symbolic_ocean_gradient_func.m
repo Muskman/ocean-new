@@ -39,9 +39,9 @@ function ocean_gradient_func = create_symbolic_ocean_gradient_func(current_param
         % Handle time-varying behavior if needed
         if strcmp(current_params.type, 'time_varying')
             % Example: Oscillating vortex center and strength
-            x0 = x0_base + 5 * sin(0.1 * t);
-            y0 = y0_base + 3 * cos(0.07 * t);
-            Gamma = Gamma_base * (1 + 0.1*cos(0.05*t));
+            x0 = x0_base + 5 * sin(0.1 * t/2);
+            y0 = y0_base + 3 * cos(0.07 * t/2);
+            Gamma = Gamma_base * (1 + 0.1*cos(0.05*t/2));
         else
             x0 = x0_base;
             y0 = y0_base;

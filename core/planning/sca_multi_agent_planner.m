@@ -1,5 +1,5 @@
 % sca_multi_agent_planner.m
-function planned_trajectories = sca_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params)
+function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params)
     % SCA and stochastic-SCAalgorithm for multi-agent trajectory planning
     
     import casadi.*
@@ -20,8 +20,13 @@ function planned_trajectories = sca_multi_agent_planner(agents, env_params, curr
     opts.ipopt.warm_start_init_point = 'yes';
     opts.expand = true;
 
-    
-    for iter = 1:20
+    max_outer_iterations = sim_params.max_outer_iterations;
+    learning_rate = sim_params.learning_rate;
+
+    % --- Start timing ---
+    tic;
+
+    for iter = 1:max_outer_iterations
         fprintf('-------------------------\n')
         fprintf('Outer Iteration %d\n',iter)
         fprintf('-------------------------\n')
@@ -39,8 +44,9 @@ function planned_trajectories = sca_multi_agent_planner(agents, env_params, curr
         else
             % Update reference trajectory (P0) for subsequent iterations
             % No need to rebuild NLP - just update P0 parameter
-            builder.updateReferenceTrajectory(P_opt);
-            w0 = P_opt(:); % Use previous solution as initial guess
+            P_current = builder.P0 + learning_rate * (P_opt - builder.P0);
+            builder.updateReferenceTrajectory(P_current);
+            w0 = P_current(:); % Use previous solution as initial guess
             fprintf('Using previous solution as warm start.\n');
         end
         
@@ -50,7 +56,7 @@ function planned_trajectories = sca_multi_agent_planner(agents, env_params, curr
             % Pass current P0 as parameter to solver
             if strcmp(sim_params.algo, 'ssca')
                 builder.ensemble_samples = zeros(current_params.num_ensemble_members, 1);
-                sample_idx = randi(current_params.num_ensemble_members,1,1);
+                sample_idx = randperm(current_params.num_ensemble_members,1);
                 builder.ensemble_samples(sample_idx) = 1;
             else
                 builder.ensemble_samples = ones(current_params.num_ensemble_members, 1);
@@ -73,10 +79,19 @@ function planned_trajectories = sca_multi_agent_planner(agents, env_params, curr
                 T = sim_params.planning_horizon;
                 P_opt = reshape(w_opt, 2*N_agents, T+1);
                 
-                % Format output for the simulation
-                for i = 1:N_agents
-                    agent_traj = P_opt(2*i-1 : 2*i, :); % Extract 2x(T+1) trajectory
-                    planned_trajectories{i} = struct('planned_positions', agent_traj);
+                if iter == max_outer_iterations
+                    P_current = builder.P0 + learning_rate * (P_opt - builder.P0);
+                    builder.updateReferenceTrajectory(P_current);
+                    training_time = toc;
+                    builder.buildBenchmarkingExpressions();
+                    metrics = builder.getBenchmarkingMetrics();
+                    metrics.training_time = training_time;
+
+                    % Format output for the simulation
+                    for i = 1:N_agents
+                        agent_traj = P_current(2*i-1 : 2*i, :); % Extract 2x(T+1) trajectory
+                        planned_trajectories{i} = struct('planned_positions', agent_traj);
+                    end
                 end
             else
                 fprintf('ProblemBuilder Planner: Solver FAILED! Status: %s\n', stats.return_status);

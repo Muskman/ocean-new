@@ -1,5 +1,5 @@
 % test_multi_agent_planner.m
-function planned_trajectories = fullopt_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params)
+function [planned_trajectories, metrics] = fullopt_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params)
     % solve full optimization problem for multi-agent planning
     
     import casadi.*
@@ -11,7 +11,7 @@ function planned_trajectories = fullopt_multi_agent_planner(agents, env_params, 
     % config.enable_formation_constraints = false;
     
     builder = ProblemBuilder(agents, env_params, current_params, sim_params, agent_params, config);
-    
+
     % --- Solver Options ---
     opts = struct;
     opts.ipopt.print_level = 0;     % 0=quiet, 3=default, 5=verbose
@@ -21,6 +21,9 @@ function planned_trajectories = fullopt_multi_agent_planner(agents, env_params, 
     opts.ipopt.warm_start_init_point = 'yes';
     opts.expand = true;
 
+    % --- Start timing ---
+    tic;
+    
     % --- Build Parameterized NLP ---
     nlp = builder.getParameterizedNLP();
     [lbg, ubg] = builder.getParameterizedConstraintBounds();
@@ -28,12 +31,15 @@ function planned_trajectories = fullopt_multi_agent_planner(agents, env_params, 
     builder.ensemble_samples = ones(current_params.num_ensemble_members, 1);
     
     solver = nlpsol('solver', 'ipopt', nlp, opts);
-    
+
     % --- Solve the Parameterized NLP ---
     planned_trajectories = cell(length(agents), 1); % Initialize output
     try
         p0 = [w0; builder.ensemble_samples];
         sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', p0, 'lbg', lbg, 'ubg', ubg);
+        
+        % Record training time
+        training_time = toc;
         
         % --- Process Solution ---
         stats = solver.stats();
@@ -54,6 +60,11 @@ function planned_trajectories = fullopt_multi_agent_planner(agents, env_params, 
                 agent_traj = P_opt(2*i-1 : 2*i, :); % Extract 2x(T+1) trajectory
                 planned_trajectories{i} = struct('planned_positions', agent_traj);
             end
+            
+            builder.updateReferenceTrajectory(P_opt);
+            builder.buildBenchmarkingExpressions();
+            metrics = builder.getBenchmarkingMetrics();
+            metrics.training_time = training_time;
         else
             fprintf('ProblemBuilder Planner: Solver FAILED! Status: %s\n', stats.return_status);
             % Fallback: Keep previous plan or stop (return empty/zero velocity plan)

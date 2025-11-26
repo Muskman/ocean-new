@@ -12,7 +12,7 @@ rng(4, "philox");  % Values from config could be used here in future
 
 % --- Start Profiling ---
 % Apply profiling configuration  
-profile on -detail builtin -timer performance;
+% profile on -detail builtin -timer performance;
 
 fprintf('Initializing environment, agents, and currents...\n');
 
@@ -66,17 +66,17 @@ for t_idx = 1:sim_params.time_steps
         % Select planner based on algorithm parameter
         switch sim_params.algo
             case 'fullOpt'
-                planned_trajectories = fullopt_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
+                [planned_trajectories, metrics] = fullopt_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
             case {'sca', 'ssca'}
-                planned_trajectories = sca_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
+                [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
             otherwise
                 error('Unknown algorithm: %s. Valid options: fullOpt, sca, ssca', sim_params.algo);
         end
         
         % Stop and view results
-        profile off
-        profile viewer
-        profview  % Alternative viewer
+        % profile off
+        % profile viewer
+        % profview  % Alternative viewer
         % profsave
 
         % Distribute the plan (or fallback)
@@ -123,6 +123,19 @@ for t_idx = 1:sim_params.time_steps
 end % End simulation loop
 
 fprintf('Simulation finished after %.1f seconds.\n', sim_params.T_final);
+
+% --- Print Metrics ---
+fprintf('\n%s\n', repmat('=', 1, 80));
+fprintf('                              BENCHMARKING METRICS\n');
+fprintf('%s\n', repmat('=', 1, 80));
+fprintf('| %-25s | %-20s | %-20s |\n', 'Metric', 'Training', 'Testing');
+fprintf('|%s|%s|%s|\n', repmat('-', 1, 27), repmat('-', 1, 22), repmat('-', 1, 22));
+fprintf('| %-25s | %20.4f | %20.4f |\n', 'Energy', metrics.training_energy, metrics.testing_energy);
+fprintf('| %-25s | %20d | %20d |\n', 'Control Violations', metrics.training_control_constraint_violations, metrics.testing_control_constraint_violations);
+fprintf('%s\n', repmat('-', 1, 80));
+fprintf('| %-25s | %20d |\n', 'Constraint Violations', metrics.training_constraint_violations);
+fprintf('| %-25s | %20.2f |\n', 'Computation Time (s)', metrics.training_time);
+fprintf('%s\n\n', repmat('=', 1, 80));
 
 % --- Final Visualization ---
 visualizer.finalize(agents, state_history);

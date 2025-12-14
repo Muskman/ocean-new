@@ -134,7 +134,8 @@ fprintf('| %-25s | %20.4f | %20.4f |\n', 'Energy', metrics.training_energy, metr
 fprintf('| %-25s | %20d | %20d |\n', 'Control Violations', metrics.training_control_constraint_violations, metrics.testing_control_constraint_violations);
 fprintf('%s\n', repmat('-', 1, 80));
 fprintf('| %-25s | %20d |\n', 'Constraint Violations', metrics.training_constraint_violations);
-fprintf('| %-25s | %20.2f |\n', 'Computation Time (s)', metrics.training_time);
+fprintf('| %-25s | %20.2f |\n', 'Formulation Time (s)', metrics.formulation_time);
+fprintf('| %-25s | %20.2f |\n', 'Training Time (s)', metrics.training_time);
 fprintf('%s\n\n', repmat('=', 1, 80));
 
 % --- Final Visualization ---

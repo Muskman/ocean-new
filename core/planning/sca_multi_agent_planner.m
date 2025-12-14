@@ -14,17 +14,25 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
     % --- Solver Options ---
     opts = struct;
     opts.ipopt.print_level = 0;     % 0=quiet, 3=default, 5=verbose
-    opts.ipopt.max_iter = 2000;     % Limit iterations
-    opts.ipopt.tol = 1e-6;          % Solver tolerance
-    opts.print_time = 1;
-    opts.ipopt.warm_start_init_point = 'yes';
+    % opts.ipopt.max_iter = 2000;     % Limit iterations
+    % opts.ipopt.tol = 1e-6;          % Solver tolerance
+    % opts.print_time = 1;
+    % opts.ipopt.warm_start_init_point = 'yes';
     opts.expand = true;
+
+
+    % opts.fatrop.print_level = 0;     % 0=quiet, 3=default, 5=verbose
+    % opts.debug = true;
+    % opts.jit = true;
+    % opts.jit_options.flags = '-O3';
+    % opts.jit_options.compiler = 'clang';
 
     max_outer_iterations = sim_params.max_outer_iterations;
     learning_rate = sim_params.learning_rate;
 
     % --- Start timing ---
-    tic;
+    tic; solve_time = 0;
+    
 
     for iter = 1:max_outer_iterations
         fprintf('-------------------------\n')
@@ -35,12 +43,15 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
         if iter == 1
             % Build parameterized NLP once
             nlp = builder.getParameterizedNLP();
+            % keyboard;
             [lbg, ubg] = builder.getParameterizedConstraintBounds();
             w0 = builder.getInitialGuess();
             
             % Create solver once
             solver = nlpsol('solver', 'ipopt', nlp, opts);
             fprintf('Parameterized solver created once for all iterations.\n');
+            formulation_time = toc;
+            fprintf('Time taken to formulate problem: %.2f seconds\n', formulation_time);
         else
             % Update reference trajectory (P0) for subsequent iterations
             % No need to rebuild NLP - just update P0 parameter
@@ -62,9 +73,10 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
                 builder.ensemble_samples = ones(current_params.num_ensemble_members, 1);
             end
 
-            p0 = [w0; builder.ensemble_samples];
+            p0 = [w0; builder.ensemble_samples]; tic_solve = tic;
             sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', p0, 'lbg', lbg, 'ubg', ubg);
-            
+            solve_time = solve_time + toc(tic_solve);
+
             % --- Process Solution ---
             stats = solver.stats();
             if stats.success || strcmp(stats.return_status, 'Solve_Succeeded') || strcmp(stats.return_status, 'Solved_To_Acceptable_Level')
@@ -82,9 +94,10 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
                 if iter == max_outer_iterations
                     P_current = builder.P0 + learning_rate * (P_opt - builder.P0);
                     builder.updateReferenceTrajectory(P_current);
-                    training_time = toc;
+                    training_time = solve_time;
                     builder.buildBenchmarkingExpressions();
                     metrics = builder.getBenchmarkingMetrics();
+                    metrics.formulation_time = formulation_time;
                     metrics.training_time = training_time;
 
                     % Format output for the simulation

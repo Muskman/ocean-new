@@ -145,8 +145,12 @@ function [ocean_func, ocean_gradient_func] = create_symbolic_ocean_func(current_
 
     % --- Create Mapped Functions ---
     % Map over the first input ('pos_in') using serial execution
-    ocean_func = ocean_func_single.map(1, 'serial');
+    % ocean_func = ocean_func_single.map(1, 'serial');
     % ocean_linear_approx_func = ocean_linear_func_single.map(1, 'serial');
-    ocean_gradient_func = ocean_gradient_func.map(1, 'serial');
+    % ocean_gradient_func = ocean_gradient_func.map(1, 'serial');
+
+    n_threads = feature('numcores');
+    ocean_func = ocean_func_single.map(4, 'thread', n_threads);
+    ocean_gradient_func = ocean_gradient_func.map(4, 'thread', n_threads);
 
 end 

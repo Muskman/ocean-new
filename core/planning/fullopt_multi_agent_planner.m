@@ -31,7 +31,8 @@ function [planned_trajectories, metrics] = fullopt_multi_agent_planner(agents, e
     builder.ensemble_samples = ones(current_params.num_ensemble_members, 1);
     
     solver = nlpsol('solver', 'ipopt', nlp, opts);
-
+    formulation_time = toc;
+    fprintf('Time taken to formulate problem: %.2f seconds\n', formulation_time);
     % --- Solve the Parameterized NLP ---
     planned_trajectories = cell(length(agents), 1); % Initialize output
     try
@@ -39,7 +40,7 @@ function [planned_trajectories, metrics] = fullopt_multi_agent_planner(agents, e
         sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', p0, 'lbg', lbg, 'ubg', ubg);
         
         % Record training time
-        training_time = toc;
+        training_time = toc-formulation_time;
         
         % --- Process Solution ---
         stats = solver.stats();
@@ -64,6 +65,7 @@ function [planned_trajectories, metrics] = fullopt_multi_agent_planner(agents, e
             builder.updateReferenceTrajectory(P_opt);
             builder.buildBenchmarkingExpressions();
             metrics = builder.getBenchmarkingMetrics();
+            metrics.formulation_time = formulation_time;
             metrics.training_time = training_time;
         else
             fprintf('ProblemBuilder Planner: Solver FAILED! Status: %s\n', stats.return_status);

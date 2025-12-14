@@ -15,18 +15,18 @@ function [sim_params, env_params, current_params, agent_params, num_agents, vide
     fprintf('Setting up simulation parameters...\n');
     
     % --- Simulation Parameters ---
-    sim_params.dt = 1;                       % Simulation time step (s)
-    sim_params.T_final = 300;                % Total simulation time (s)
+    sim_params.dt = 0.1;                       % Simulation time step (s)
+    sim_params.T_final = 20;                 % Total simulation time (s)
     sim_params.time_steps = floor(sim_params.T_final / sim_params.dt);
     sim_params.visualization = true;         % Enable/disable visualization
     sim_params.vis_interval = 20;            % Update visualization every N steps (adjust as needed)
     sim_params.vis_vector_scale = 1;         % Scaling factor for velocity vector visualization
-    sim_params.formation_enabled = true;    % *** SET TO true TO ENABLE FORMATION ***
+    sim_params.formation_enabled = true;     % toggle formation control
     sim_params.planning_horizon = sim_params.T_final/sim_params.dt;       % Number of steps planner looks ahead
     sim_params.replan_interval = sim_params.T_final/sim_params.dt;        % Replan interval (adjust as needed)
     sim_params.gradient_required_by_planner = true;
-    sim_params.algo = 'fullOpt';               % Planning algorithm: 'fullOpt', 'sca', 'ssca'
-    sim_params.max_outer_iterations = 20;
+    sim_params.algo = 'ssca';               % Planning algorithm: 'fullOpt', 'sca', 'ssca'
+    sim_params.max_outer_iterations = 10;
     sim_params.learning_rate = 0.5;
 
     % --- Environment Parameters ---
@@ -44,7 +44,7 @@ function [sim_params, env_params, current_params, agent_params, num_agents, vide
     current_params.vortices = struct('center', {}, 'strength', {}, 'core_radius', {});
     current_params.vortices(1) = struct('center', [10; 10], 'strength', 25*4, 'core_radius', 20);
     current_params.vortices(2) = struct('center', [-15; -15], 'strength', -20*4, 'core_radius', 30);
-    total_num_ensemble_members = 20;
+    total_num_ensemble_members = 10;
     current_params.num_ensemble_members = ceil(total_num_ensemble_members*0.8);
     current_params.num_ensemble_members_test = floor(current_params.num_ensemble_members*0.2);
     current_params.noise_level = 0.1;         % Standard deviation of noise added to current estimate
@@ -77,7 +77,7 @@ function [sim_params, env_params, current_params, agent_params, num_agents, vide
     agent_params.formation_relative_positions = agent_params.formation_relative_positions - mean(agent_params.formation_relative_positions, 2);
 
     % --- Video Export Parameters ---
-    video_params.enabled = true;                    % Enable/disable video export
+    video_params.enabled = false;                    % Enable/disable video export
     video_params.format = 'Motion JPEG AVI';        % Video format (fallback: auto-detect best available)
     video_params.quality = 95;                      % Video quality (0-100)
     video_params.framerate = 30;                    % Output video framerate

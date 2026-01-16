@@ -88,6 +88,7 @@ while (flag && m <= num_its)
         end
         plot(path(:,1),path(:,2),'r-x')
         hold off
+        pause(0.001)
     end
 
     % loop to calculate cost for all the noisy trajectories
@@ -175,7 +176,7 @@ end
 
 
 %% finding the energy incurred in the STOMP trajectory
-[ocean_x, ocean_y] = vel_ocean_opt(path(:,1), path(:,2), u, v, q_x_m(1,:),q_y_m(:,1)');
+[ocean_x, ocean_y] = vel_ocean_opt(path(:,1), path(:,2), u, v, q_x_m(1,:),q_y_m(:,1)', opts.current_params);
 ocean_init = [ocean_x' ; ocean_y'];
 V_rel_i =  zeros(1,N);
 V_abs_i =  zeros(1,N);

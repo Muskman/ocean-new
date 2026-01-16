@@ -8,6 +8,7 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
     config = ProblemBuilder.getDefaultConfig();
     % You can customize configuration here if needed
     config.use_linear_approximation = true;
+    % config.enable_formation_constraints = false;
      
     builder = ProblemBuilder(agents, env_params, current_params, sim_params, agent_params, config);
     
@@ -28,10 +29,9 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
     % opts.jit_options.compiler = 'clang';
 
     max_outer_iterations = sim_params.max_outer_iterations;
-    learning_rate = sim_params.learning_rate;
-
+    
     % --- Start timing ---
-    tic; solve_time = 0;
+    tic_formulation = tic; formulation_time = 0; solve_time = 0;
     
 
     for iter = 1:max_outer_iterations
@@ -50,22 +50,30 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
             % Create solver once
             solver = nlpsol('solver', 'ipopt', nlp, opts);
             fprintf('Parameterized solver created once for all iterations.\n');
-            formulation_time = toc;
+            formulation_time = formulation_time + toc(tic_formulation);
             fprintf('Time taken to formulate problem: %.2f seconds\n', formulation_time);
+
+            % keyboard;
+            % [H, g] = builder.getQPMatrices();
         else
             % Update reference trajectory (P0) for subsequent iterations
             % No need to rebuild NLP - just update P0 parameter
-            P_current = builder.P0 + learning_rate * (P_opt - builder.P0);
+            P_current = builder.P0 + builder.learning_rate * (P_opt - builder.P0);
             builder.updateReferenceTrajectory(P_current);
             w0 = P_current(:); % Use previous solution as initial guess
             fprintf('Using previous solution as warm start.\n');
+
+            tic_formulation = tic;
+            nlp = builder.getParameterizedNLP(sample_idx);
+            solver = nlpsol('solver', 'ipopt', nlp, opts);
+            formulation_time = formulation_time + toc(tic_formulation);
         end
         
         % --- Solve the Parameterized NLP ---
         planned_trajectories = cell(length(agents), 1); % Initialize output
         try
             % Pass current P0 as parameter to solver
-            if strcmp(sim_params.algo, 'ssca')
+            if any(strcmp(sim_params.algo, 'ssca'))
                 builder.ensemble_samples = zeros(current_params.num_ensemble_members, 1);
                 sample_idx = randperm(current_params.num_ensemble_members,1);
                 builder.ensemble_samples(sample_idx) = 1;
@@ -73,8 +81,10 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
                 builder.ensemble_samples = ones(current_params.num_ensemble_members, 1);
             end
 
-            p0 = [w0; builder.ensemble_samples]; tic_solve = tic;
-            sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', p0, 'lbg', lbg, 'ubg', ubg);
+            % p0 = [w0; builder.ensemble_samples]; 
+            tic_solve = tic;
+            % sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', p0, 'lbg', lbg, 'ubg', ubg);
+            sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'lbg', lbg, 'ubg', ubg);
             solve_time = solve_time + toc(tic_solve);
 
             % --- Process Solution ---
@@ -84,6 +94,9 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
                     fprintf('ProblemBuilder Planner: Warning! Solved to acceptable level.\n');
                 end
                 fprintf('ProblemBuilder Planner: Success! Objective: %.4f\n', full(sol.f));
+                fprintf('ProblemBuilder Planner: Learning rate: %.4f | Gradient tracking weight: %.4f\n', builder.learning_rate, builder.gradient_tracking_weight);
+                fprintf('ProblemBuilder Planner: Stochastic gradient norm: %.4f\n', builder.stochastic_gradient_norm);
+                fprintf('ProblemBuilder Planner: Step %.4f\n', norm(builder.P0(:)-builder.P0_old(:)));
                 w_opt = full(sol.x);
                 
                 % Get problem dimensions
@@ -92,7 +105,7 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
                 P_opt = reshape(w_opt, 2*N_agents, T+1);
                 
                 if iter == max_outer_iterations
-                    P_current = builder.P0 + learning_rate * (P_opt - builder.P0);
+                    P_current = builder.P0 + builder.learning_rate * (P_opt - builder.P0);
                     builder.updateReferenceTrajectory(P_current);
                     training_time = solve_time;
                     builder.buildBenchmarkingExpressions();

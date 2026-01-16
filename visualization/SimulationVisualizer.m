@@ -91,21 +91,20 @@ classdef SimulationVisualizer < handle
             title(obj.ax, 'Multi-Agent Ocean Navigation (Initializing)', 'FontSize', 14, 'FontWeight', 'bold');
             xlabel(obj.ax, 'X (m)', 'FontSize', 12); ylabel(obj.ax, 'Y (m)', 'FontSize', 12, 'FontWeight', 'bold');
 
-            % Initialize Ocean Current Grid (finer grid for contour) (lines 42-46)
+            % Initialize Ocean Current Grid
             nx_contour = 50; ny_contour = 50;
             x_vec_contour = linspace(obj.env_params.x_limits(1), obj.env_params.x_limits(2), nx_contour);
             y_vec_contour = linspace(obj.env_params.y_limits(1), obj.env_params.y_limits(2), ny_contour);
             [obj.X_grid_contour, obj.Y_grid_contour] = meshgrid(x_vec_contour, y_vec_contour);
 
-            % --- Vectorized Calculation for Contour --- (lines 48-54)
+            % --- Vectorized Calculation for Contour --- 
             obj.contour_positions = [obj.X_grid_contour(:)'; obj.Y_grid_contour(:)']; % Create 2xN matrix
             [U_grid_contour_flat, V_grid_contour_flat] = calculate_ocean_current_vectorized(obj.contour_positions, 0, obj.current_params);
             Current_Mag_flat = sqrt(U_grid_contour_flat.^2 + V_grid_contour_flat.^2);
             % Reshape back to grid format
             Current_Mag = reshape(Current_Mag_flat, size(obj.X_grid_contour));
-            % --- End Vectorized Calculation ---
 
-            % Initialize Contour Plot (lines 56-66)
+            % Initialize Contour Plot
             [~, obj.contour_h] = contourf(obj.ax, obj.X_grid_contour, obj.Y_grid_contour, Current_Mag, 10, 'LineStyle', 'none');
             
             colmap = flipud(cmap('b',100,65,5));
@@ -120,13 +119,13 @@ classdef SimulationVisualizer < handle
             mag_limits = prctile(Current_Mag(:), [1, 99]); % Get 1st and 99th percentile
             caxis(obj.ax, [0, max(mag_limits(2), eps)*1.1]);
 
-            % Initialize Current Vector Field (Quiver) on a potentially coarser grid (lines 68-72)
+            % Initialize Current Vector Field (Quiver) on a potentially coarser grid 
             nx_quiver = 20; ny_quiver = 20;
             x_vec_quiver = linspace(obj.env_params.x_limits(1), obj.env_params.x_limits(2), nx_quiver);
             y_vec_quiver = linspace(obj.env_params.y_limits(1), obj.env_params.y_limits(2), ny_quiver);
             [obj.X_grid_quiver, obj.Y_grid_quiver] = meshgrid(x_vec_quiver, y_vec_quiver);
 
-            % --- Vectorized Calculation for Quiver --- (lines 74-89)
+            % --- Vectorized Calculation for Quiver --- 
             obj.quiver_positions = [obj.X_grid_quiver(:)'; obj.Y_grid_quiver(:)']; % Create 2xN matrix
             [U_grid_quiver_flat, V_grid_quiver_flat] = calculate_ocean_current_vectorized(obj.quiver_positions, 0, obj.current_params);
             % Mask values inside obstacles for quiver display
@@ -143,14 +142,14 @@ classdef SimulationVisualizer < handle
             V_grid_quiver = reshape(V_grid_quiver_flat, size(obj.X_grid_quiver));
             % --- End Vectorized Calculation ---
 
-            % Create quiver plot (line 91)
+            % Create quiver plot 
             obj.quiver_h = quiver(obj.ax, obj.X_grid_quiver, obj.Y_grid_quiver, U_grid_quiver, V_grid_quiver, 'AutoScaleFactor', 1.5, 'Color', 'k', 'LineWidth', 0.5);
 
-            % Plot Static Environment (Obstacles) (lines 93-95)
+            % Plot Static Environment (Obstacles) 
             plot_environment(obj.ax, obj.env_params, agents);
             obj.obstacle_handles = findobj(obj.ax, 'Type', 'patch'); % Find obstacle patches just plotted
 
-            % Initialize Agent Graphics Handles (using fill) (lines 97-108)
+            % Initialize Agent Graphics Handles (using fill) 
             obj.agent_fill_plots = gobjects(obj.num_agents, 1); 
             obj.path_plots = gobjects(obj.num_agents, 1); 
             obj.plan_plots = gobjects(obj.num_agents, 1);
@@ -166,7 +165,7 @@ classdef SimulationVisualizer < handle
                 obj.current_est_quivers(i) = quiver(obj.ax, agents(i).position(1), agents(i).position(2), 0, 0, 'Color', 'm', 'LineWidth', 1.5, 'AutoScale', 'off', 'MaxHeadSize', 0.5);
             end
 
-            % Initialize Formation Links Plot (lines 110-116)
+            % Initialize Formation Links Plot 
             if obj.sim_params.formation_enabled && obj.num_agents > 1
                 num_links = nchoosek(obj.num_agents, 2); 
                 obj.formation_links = gobjects(num_links, 1); 
@@ -179,7 +178,7 @@ classdef SimulationVisualizer < handle
                 end
             end
 
-            % Set Stacking Order (Bottom to Top) (lines 118-129)
+            % Set Stacking Order (Bottom to Top) 
             uistack(obj.obstacle_handles, 'bottom'); % Obstacles above quiver
             uistack(obj.quiver_h, 'bottom');        % Quiver above contour
             uistack(obj.contour_h, 'bottom');
@@ -241,7 +240,7 @@ classdef SimulationVisualizer < handle
                  obj.first_viz_step = false;
             end
 
-            % --- Update Agents and Agent-Specific Plots --- (lines 247-278)
+            % --- Update Agents and Agent-Specific Plots --- 
             agent_positions = cat(2, agents.position); % Get all current positions [2xN]
             for i = 1:obj.num_agents
                 pos_i = agent_positions(:, i);
@@ -278,7 +277,7 @@ classdef SimulationVisualizer < handle
                  if ishandle(obj.current_est_quivers(i)); uistack(obj.current_est_quivers(i), 'top'); end
             end
 
-            % Update Formation Links (if enabled) (lines 280-286)
+            % Update Formation Links (if enabled) 
             if obj.sim_params.formation_enabled && obj.num_agents > 1 && ~isempty(obj.formation_links) && all(ishandle(obj.formation_links))
                  link_idx = 1;
                  for i = 1:obj.num_agents
@@ -289,7 +288,7 @@ classdef SimulationVisualizer < handle
                  end
             end
 
-            % Update title and refresh display (lines 288-289)
+            % Update title and refresh display 
             title(obj.ax, sprintf('Multi-Agent Ocean Navigation (t = %3.1f s)', current_time), 'FontSize', 14, 'FontWeight', 'bold');
             drawnow limitrate;
             

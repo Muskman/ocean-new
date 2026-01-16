@@ -6,31 +6,59 @@ clear; clc; close all;
 % This replaces the hardcoded parameter definitions
 [sim_params, env_params, current_params, agent_params, num_agents, video_params] = simulation_config();
 
-% --- Setup Random Seed ---
-% Apply random seed configuration
-rng(30, "philox");  % Values from config could be used here in future
-
-% --- Start Profiling ---
-% Apply profiling configuration  
-% profile on -detail builtin -timer performance;
-
-fprintf('Initializing environment, agents, and currents...\n');
-
-% --- Initialization ---
-% Pass sim_params and agent_params to initializer
-agents = initialize_agents(num_agents, agent_params, env_params, sim_params);
-state_history = cell(num_agents, 1);
-for i = 1:num_agents
-    state_history{i} = nan(2, sim_params.time_steps + 1);
-    state_history{i}(:, 1) = agents(i).position;
-    agents(i).current_plan = []; agents(i).plan_start_step = -inf;
+% --- Handle Multiple Algorithms ---
+if iscell(sim_params.algo)
+    algorithms_to_run = sim_params.algo;
+else
+    algorithms_to_run = {sim_params.algo};
 end
 
-% --- Initialize Visualization ---
-visualizer = SimulationVisualizer(sim_params, env_params, current_params, agent_params, num_agents, video_params);
-visualizer.initialize(agents);
+% Store results for all algorithms
+all_metrics = struct();
+all_final_agents = cell(length(algorithms_to_run), 1);
+all_state_histories = cell(length(algorithms_to_run), 1);
 
-fprintf('Starting simulation loop...\n');
+% --- Start Profiling ---
+% Apply profiling configuration
+% profile on -detail builtin -timer performance;
+
+fprintf('Running comparison for %d algorithm(s): %s\n', length(algorithms_to_run), strjoin(algorithms_to_run, ', '));
+
+% --- Run Simulation for Each Algorithm ---
+for algo_idx = 1:length(algorithms_to_run)
+    current_algo = algorithms_to_run{algo_idx};
+    fprintf('\n%s\n', repmat('=', 1, 60));
+    fprintf('Running Algorithm: %s (%d/%d)\n', current_algo, algo_idx, length(algorithms_to_run));
+    fprintf('%s\n', repmat('=', 1, 60));
+
+    % Set current algorithm in sim_params
+    sim_params.algo = current_algo;
+
+    % Disable video for all algorithms
+    video_params.enabled = false;
+
+    % --- Setup Random Seed ---
+    % Apply random seed configuration
+    rng(8, "philox");  % Values from config could be used here in future
+
+
+    fprintf('Initializing environment, agents, and currents...\n');
+
+    % --- Initialization ---
+    % Pass sim_params and agent_params to initializer
+    agents = initialize_agents(num_agents, agent_params, env_params, sim_params);
+    state_history = cell(num_agents, 1);
+    for i = 1:num_agents
+        state_history{i} = nan(2, sim_params.time_steps + 1);
+        state_history{i}(:, 1) = agents(i).position;
+        agents(i).current_plan = []; agents(i).plan_start_step = -inf;
+    end
+
+    % --- Initialize Visualization ---
+    visualizer = SimulationVisualizer(sim_params, env_params, current_params, agent_params, num_agents, video_params);
+    visualizer.initialize(agents);
+
+    fprintf('Starting simulation loop...\n');
 
 % --- Simulation Loop ---
 for t_idx = 1:sim_params.time_steps
@@ -124,21 +152,77 @@ for t_idx = 1:sim_params.time_steps
     if mod(t_idx, 100) == 0; fprintf('Simulated %.1f seconds...\n', current_time); end
 end % End simulation loop
 
-fprintf('Simulation finished after %.1f seconds.\n', sim_params.T_final);
+    fprintf('Algorithm %s finished after %.1f seconds.\n', current_algo, sim_params.T_final);
 
-% --- Print Metrics ---
-fprintf('\n%s\n', repmat('=', 1, 80));
-fprintf('                              BENCHMARKING METRICS\n');
-fprintf('%s\n', repmat('=', 1, 80));
-fprintf('| %-25s | %-20s | %-20s |\n', 'Metric', 'Training', 'Testing');
-fprintf('|%s|%s|%s|\n', repmat('-', 1, 27), repmat('-', 1, 22), repmat('-', 1, 22));
-fprintf('| %-25s | %20.4f | %20.4f |\n', 'Energy', metrics.training_energy, metrics.testing_energy);
-fprintf('| %-25s | %20d | %20d |\n', 'Control Violations', metrics.training_control_constraint_violations, metrics.testing_control_constraint_violations);
-fprintf('%s\n', repmat('-', 1, 80));
-fprintf('| %-25s | %20d |\n', 'Constraint Violations', metrics.training_constraint_violations);
-fprintf('| %-25s | %20.2f |\n', 'Formulation Time (s)', metrics.formulation_time);
-fprintf('| %-25s | %20.2f |\n', 'Training Time (s)', metrics.training_time);
-fprintf('%s\n\n', repmat('=', 1, 80));
+    % Store results for this algorithm
+    all_metrics.(current_algo) = metrics;
+    all_final_agents{algo_idx} = agents;
+    all_state_histories{algo_idx} = state_history;
 
-% --- Final Visualization ---
-visualizer.finalize(agents, state_history);
+    % --- Final Visualization ---
+    visualizer.finalize(agents, state_history);
+
+end % End algorithm loop
+
+% --- Print Comparison Metrics ---
+fprintf('\n%s\n', repmat('=', 1, 120));
+fprintf('                                      ALGORITHM COMPARISON METRICS\n');
+fprintf('%s\n', repmat('=', 1, 120));
+
+% Create header with algorithm names
+header_format = '| %-25s ';
+data_format = '| %-25s ';
+for i = 1:length(algorithms_to_run)
+    header_format = [header_format, '| %-18s '];
+    data_format = [data_format, '| %18.4f '];
+end
+header_format = [header_format, '|\n'];
+data_format = [data_format, '|\n'];
+
+% Print header
+fprintf(header_format, 'Metric', algorithms_to_run{:});
+fprintf('|%s%s%s|\n', repmat('-', 1, 27), repmat('+', 1, 1), repmat('-', 1, 18*length(algorithms_to_run)+1));
+
+% Energy (Training)
+energy_vals = cellfun(@(algo) all_metrics.(algo).training_energy, algorithms_to_run);
+fprintf(data_format, 'Energy (Training)', energy_vals);
+
+% Energy (Testing)
+energy_test_vals = cellfun(@(algo) all_metrics.(algo).testing_energy, algorithms_to_run);
+fprintf(data_format, 'Energy (Testing)', energy_test_vals);
+
+% Control Violations (Training)
+control_viol_train = cellfun(@(algo) all_metrics.(algo).training_control_constraint_violations, algorithms_to_run);
+fprintf('| %-25s ', 'Control Viol (Train)');
+for i = 1:length(algorithms_to_run)
+    fprintf('| %18d ', control_viol_train(i));
+end
+fprintf('|\n');
+
+% Control Violations (Testing)
+control_viol_test = cellfun(@(algo) all_metrics.(algo).testing_control_constraint_violations, algorithms_to_run);
+fprintf('| %-25s ', 'Control Viol (Test)');
+for i = 1:length(algorithms_to_run)
+    fprintf('| %18d ', control_viol_test(i));
+end
+fprintf('|\n');
+
+fprintf('%s\n', repmat('-', 1, 120));
+
+% Constraint Violations
+constraint_viol = cellfun(@(algo) all_metrics.(algo).training_constraint_violations, algorithms_to_run);
+fprintf('| %-25s ', 'Constraint Violations');
+for i = 1:length(algorithms_to_run)
+    fprintf('| %18d ', constraint_viol(i));
+end
+fprintf('|\n');
+
+% Formulation Time
+form_time = cellfun(@(algo) all_metrics.(algo).formulation_time, algorithms_to_run);
+fprintf(data_format, 'Formulation Time (s)', form_time);
+
+% Training Time
+train_time = cellfun(@(algo) all_metrics.(algo).training_time, algorithms_to_run);
+fprintf(data_format, 'Training Time (s)', train_time);
+
+fprintf('%s\n\n', repmat('=', 1, 120));

@@ -45,9 +45,9 @@ function [cost] = cost_with_currents_modified(w1, w2, w3, u, v, v_max, siz,X_loc
     y_index_3 = abs(int8(l(2) / siz(1) * y_3)) + 1;
 
     % Calculating the average current between the two way points
-    vel_ocean_temp1 = find_ocean_vel(x_1,y_1,u,v,X_loc,Y_loc);
-    vel_ocean_temp2 = find_ocean_vel(x_2,y_2,u,v,X_loc,Y_loc);
-    vel_ocean_temp3 = find_ocean_vel(x_3,y_3,u,v,X_loc,Y_loc);
+    vel_ocean_temp1 = find_ocean_vel(x_1,y_1,u,v,X_loc,Y_loc, opts.current_params);
+    vel_ocean_temp2 = find_ocean_vel(x_2,y_2,u,v,X_loc,Y_loc, opts.current_params);
+    vel_ocean_temp3 = find_ocean_vel(x_3,y_3,u,v,X_loc,Y_loc, opts.current_params);
 
     if (isnan(u(x_index_1,y_index_1)) || isnan(u(x_index_2, y_index_2)) ||...
         isnan(u(x_index_3, y_index_3)) || isnan(v(x_index_1, y_index_1)) ||...
@@ -86,12 +86,12 @@ function [cost] = cost_with_currents_modified(w1, w2, w3, u, v, v_max, siz,X_loc
         vel_req_23 = sqrt(u_req_23^2 + v_req_23^2);
         vel_req_13 = sqrt(u_req_13^2 + v_req_13^2);
         
-        if (vel_req_23 <= v_max && abs_vel_23 >= v_max)
+        if (vel_req_23 <= v_max) % && abs_vel_23 >= v_max)
             %display('option 1')
             cost = 0;
-        elseif (vel_req_23 <= v_max)
-            %display('option 2')
-            cost = cost + factor * exp(-(vel_req_23 - v_max));
+        % elseif (vel_req_23 <= v_max)
+        %     %display('option 2')
+        %     cost = cost + factor * exp(-(vel_req_23 - v_max));
         else
             %display('option 3')
             cost = cost + L + (vel_req_23 - v_max) * L^2;
@@ -116,15 +116,15 @@ function [cost] = cost_with_currents_modified(w1, w2, w3, u, v, v_max, siz,X_loc
         % Adding in energy cost
         cost = cost + exp(diff);
 
-        try
-            for i = 1:opts.n_obs
-                if norm(opts.x_obs(:,i)'-w2(1:2)) < opts.r_obs(i)+opts.r_a
-                    cost = cost + O;
-                end
-            end
-        catch
-            keyboard
-        end
+        % try
+        %     for i = 1:opts.n_obs
+        %         if norm(opts.x_obs(:,i)'-w2(1:2)) < opts.r_obs(i)+opts.r_a
+        %             cost = cost + O;
+        %         end
+        %     end
+        % catch
+        %     keyboard
+        % end
     end
 
     if isnan(cost)

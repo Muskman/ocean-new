@@ -15,19 +15,29 @@ function [sim_params, env_params, current_params, agent_params, num_agents, vide
     fprintf('Setting up simulation parameters...\n');
     
     % --- Simulation Parameters ---
-    sim_params.dt = 0.1;                       % Simulation time step (s)
-    sim_params.T_final = 20;                 % Total simulation time (s)
+    sim_params.dt = 0.5;                       % Simulation time step (s)
+    sim_params.T_final = 200;                 % Total simulation time (s)
     sim_params.time_steps = floor(sim_params.T_final / sim_params.dt);
     sim_params.visualization = true;         % Enable/disable visualization
-    sim_params.vis_interval = 20;            % Update visualization every N steps (adjust as needed)
+    sim_params.vis_interval = 5;             % Update visualization every N steps (adjust as needed)
     sim_params.vis_vector_scale = 1;         % Scaling factor for velocity vector visualization
     sim_params.formation_enabled = true;     % toggle formation control
     sim_params.planning_horizon = sim_params.T_final/sim_params.dt;       % Number of steps planner looks ahead
     sim_params.replan_interval = sim_params.T_final/sim_params.dt;        % Replan interval (adjust as needed)
-    sim_params.gradient_required_by_planner = true;
-    sim_params.algo = 'ssca';               % Planning algorithm: 'fullOpt', 'sca', 'ssca'
-    sim_params.max_outer_iterations = 10;
-    sim_params.learning_rate = 0.5;
+    
+    % --- algorithm related parameters ---
+    sim_params.algo = {'fullOpt', 'ssca'};               % Planning algorithm: 'fullOpt', 'sca', 'ssca'
+    if any(strcmp(sim_params.algo, 'ssca')) 
+        sim_params.max_outer_iterations = 10;
+        sim_params.mu = 1e-6;
+        sim_params.k_bar = 1;
+        sim_params.w = 1;
+        sim_params.c = 1;
+
+        sim_params.learning_rate = sim_params.k_bar / (sim_params.w)^(1/3);
+        sim_params.gradient_tracking_weight = sim_params.c * sim_params.learning_rate^2;
+    end
+    sim_params.gradient_required_by_planner = false;
 
     % --- Environment Parameters ---
     env_params.x_limits = [-50, 50];         % Environment boundaries (m)
@@ -35,30 +45,36 @@ function [sim_params, env_params, current_params, agent_params, num_agents, vide
     env_params.obstacles = struct('center', {}, 'radius', {}); % Obstacles structure
     
     % Example obstacles
-    % env_params.obstacles(1) = struct('center', [15; 15], 'radius', 15);
+    % env_params.obstacles(1) = struc  t('center', [15; 15], 'radius', 15);
     % env_params.obstacles(2) = struct('center', [-20; 15], 'radius', 7);
-    % env_params.obstacles(3) = struct('center', [25; -20], 'radius', 6);
-
+    % env_params.obstacles(1) = struct('center', [15; 30], 'radius', 10);
+ 
     % --- Ocean Current Parameters ---
     current_params.type = 'static';           % 'static' or 'time_varying'
     current_params.vortices = struct('center', {}, 'strength', {}, 'core_radius', {});
     current_params.vortices(1) = struct('center', [10; 10], 'strength', 25*4, 'core_radius', 20);
     current_params.vortices(2) = struct('center', [-15; -15], 'strength', -20*4, 'core_radius', 30);
-    total_num_ensemble_members = 10;
+    if strcmp(current_params.type, 'time_varying')
+        current_params.vortices_end(1) = struct('center', [-10; 10], 'strength', 25*4, 'core_radius', 20);
+        current_params.vortices_end(2) = struct('center', [15; -15], 'strength', -20*4, 'core_radius', 30);
+        current_params.T_final = sim_params.T_final;
+    end
+    
+    total_num_ensemble_members = 1;
     current_params.num_ensemble_members = ceil(total_num_ensemble_members*0.8);
-    current_params.num_ensemble_members_test = floor(current_params.num_ensemble_members*0.2);
-    current_params.noise_level = 0.1;         % Standard deviation of noise added to current estimate
+    current_params.num_ensemble_members_test = floor(total_num_ensemble_members*0.2);
+    current_params.noise_level = 0.2;         % Standard deviation of noise added to current estimate
     current_params.gradient_noise_level = 0; 
 
     % --- Agent Parameters ---
-    num_agents = 4;
+    num_agents = 1;
     agent_params.radius = 1.5; 
     agent_params.max_speed = 5.0;
     agent_params.safety_margin = 0.2;
     agent_params.color = lines(num_agents); % Assign distinct colors
 
     % --- Formation Parameters ---
-    agent_params.formation_inter_agent_distance = 8.0;
+    agent_params.formation_inter_agent_distance = 10.0;
     agent_params.formation_tolerance = 1e-6;
     agent_params.formation_weight = 0.5;
     d = agent_params.formation_inter_agent_distance;
@@ -70,7 +86,7 @@ function [sim_params, env_params, current_params, agent_params, num_agents, vide
     else
         fprintf('Warning: Predefined formation not set for %d agents.\n', num_agents);
         positions = zeros(2, num_agents);
-        for i = 1:num_agents; positions(1, i) = (i - (num_agents+1)/2) * d; end
+        for i = 1:num_agents; positions(2, i) = (i - (num_agents+1)/2) * d; end
         agent_params.formation_relative_positions = positions;
     end
     % Normalize relative positions so the mean is [0;0] if not already centered

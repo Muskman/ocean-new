@@ -64,7 +64,7 @@ while (flag && m <= num_its)
     end
     
     % Creating the scaling matrix for time update
-    scale_T = max(Tinv)  * N;  %* .1
+    scale_T = max(Tinv)  * N * 0.1;
     M_t = zeros(N,N);
     for i = 1:N
         M_t(:,i) = Tinv(:,i) / scale_T(i);
@@ -141,6 +141,7 @@ while (flag && m <= num_its)
         end
         plot(path(:,1),path(:,2),'w-x')
         hold off
+        pause(0.001)
     end
     
     % Loop to calculate all the costs for the noisy paths - Second cost
@@ -269,7 +270,7 @@ while (flag && m <= num_its)
 end
 
 %% finding the energy incurred in the EESTO trajectory
-[ocean_x, ocean_y] = vel_ocean_opt(path(:,1), path(:,2), u, v, q_x_m(1,:),q_y_m(:,1)');
+[ocean_x, ocean_y] = vel_ocean_opt(path(:,1), path(:,2), u, v, q_x_m(1,:),q_y_m(:,1)', opts.current_params);
 ocean_init = [ocean_x' ; ocean_y'];
 V_rel_i =  zeros(1,N);
 V_abs_i =  zeros(1,N);

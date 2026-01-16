@@ -51,9 +51,17 @@ function [ocean_func, ocean_gradient_func] = create_symbolic_ocean_func(current_
             % Handle time-varying behavior if needed
             if strcmp(current_params.type, 'time_varying')
                 % Example: Oscillating vortex center and strength
-                x0 = x0_base + 5 * sin(0.1 * t/2);
-                y0 = y0_base + 3 * cos(0.07 * t/2);
-                Gamma = Gamma_base * (1 + 0.1*cos(0.05*t/2));
+                vortex_end = current_params.vortices_end(i);   
+                
+                x0_end = vortex_end.center(1);
+                y0_end = vortex_end.center(2);
+                Gamma_end = vortex_end.strength;
+                R_vortex_end = vortex_end.core_radius;
+
+                
+                x0 = x0_base + (x0_end - x0_base) * t/current_params.T_final;
+                y0 = y0_base + (y0_end - y0_base) * t/current_params.T_final;
+                Gamma = Gamma_base + (Gamma_end - Gamma_base) * t/current_params.T_final;
             else
                 x0 = x0_base;
                 y0 = y0_base;
@@ -145,12 +153,12 @@ function [ocean_func, ocean_gradient_func] = create_symbolic_ocean_func(current_
 
     % --- Create Mapped Functions ---
     % Map over the first input ('pos_in') using serial execution
-    % ocean_func = ocean_func_single.map(1, 'serial');
+    ocean_func = ocean_func_single.map(1, 'serial');
     % ocean_linear_approx_func = ocean_linear_func_single.map(1, 'serial');
-    % ocean_gradient_func = ocean_gradient_func.map(1, 'serial');
+    ocean_gradient_func = ocean_gradient_func.map(1, 'serial');
 
-    n_threads = feature('numcores');
-    ocean_func = ocean_func_single.map(4, 'thread', n_threads);
-    ocean_gradient_func = ocean_gradient_func.map(4, 'thread', n_threads);
+    % n_threads = feature('numcores');
+    % ocean_func = ocean_func_single.map(4, 'thread', n_threads);
+    % ocean_gradient_func = ocean_gradient_func.map(4, 'thread', n_threads);
 
 end 

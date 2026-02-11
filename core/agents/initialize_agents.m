@@ -8,6 +8,7 @@ function agents = initialize_agents(num_agents, agent_params, env_params, sim_pa
     agent_radius = agent_params.radius;
     min_dist_obs_factor = 1.5; % Multiplier for radius to keep away from obstacle center
     min_dist_agent = 2.5 * agent_radius; % Min distance between agents centers
+    boundary_margin = 2.5 * agent_radius; % Margin from environment edges
 
     if ~sim_params.formation_enabled
         fprintf('Initializing agents with random start/goal positions.\n');
@@ -17,8 +18,8 @@ function agents = initialize_agents(num_agents, agent_params, env_params, sim_pa
         for i = 1:num_agents
             valid_pos = false;
             while ~valid_pos % Find valid start position
-                pos = [env_params.x_limits(1) + rand() * diff(env_params.x_limits);
-                       env_params.y_limits(1) + rand() * diff(env_params.y_limits)];
+                pos = [env_params.x_limits(1) + boundary_margin + rand() * (diff(env_params.x_limits) - 2*boundary_margin);
+                       env_params.y_limits(1) + boundary_margin + rand() * (diff(env_params.y_limits) - 2*boundary_margin)];
                 obs_collision = false;
                 if ~isempty(env_params.obstacles) % Check only if obstacles exist
                     obs_collision = any(vecnorm(pos - cat(2, env_params.obstacles.center)) < cat(2, env_params.obstacles.radius) + agent_radius * min_dist_obs_factor);
@@ -28,8 +29,8 @@ function agents = initialize_agents(num_agents, agent_params, env_params, sim_pa
             end
             valid_goal = false;
             while ~valid_goal % Find valid goal position
-                goal = [env_params.x_limits(1) + rand() * diff(env_params.x_limits);
-                        env_params.y_limits(1) + rand() * diff(env_params.y_limits)];
+                goal = [env_params.x_limits(1) + boundary_margin + rand() * (diff(env_params.x_limits) - 2*boundary_margin);
+                        env_params.y_limits(1) + boundary_margin + rand() * (diff(env_params.y_limits) - 2*boundary_margin)];
                 obs_collision = false;
                  if ~isempty(env_params.obstacles) % Check only if obstacles exist
                     obs_collision = any(vecnorm(goal - cat(2, env_params.obstacles.center)) < cat(2, env_params.obstacles.radius) + agent_radius); % Goal edge outside obs

@@ -8,7 +8,8 @@ function [planned_trajectories, metrics] = fullopt_multi_agent_planner(agents, e
     config = ProblemBuilder.getDefaultConfig();
     % You can customize configuration here if needed
     % config.collision_method = 'pairwise'; % or 'minimum_distance'
-    % config.enable_formation_constraints = false;
+    config.enable_formation_constraints = true;
+    % config.enable_collision_constraints = false;
     
     builder = ProblemBuilder(agents, env_params, current_params, sim_params, agent_params, config);
 

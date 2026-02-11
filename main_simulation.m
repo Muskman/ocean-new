@@ -69,6 +69,8 @@ for t_idx = 1:sim_params.time_steps
                 [planned_trajectories, metrics] = fullopt_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
             case {'sca', 'ssca'}
                 [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
+            case 'dssca'
+                [planned_trajectories, metrics] = dssca_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
             otherwise
                 error('Unknown algorithm: %s. Valid options: fullOpt, sca, ssca', sim_params.algo);
         end

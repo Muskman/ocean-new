@@ -23,6 +23,10 @@ all_state_histories = cell(length(algorithms_to_run), 1);
 % profile on -detail builtin -timer performance;
 
 fprintf('Running comparison for %d algorithm(s): %s\n', length(algorithms_to_run), strjoin(algorithms_to_run, ', '));
+random_seed = 93; %randi(100); % 97
+% cases: 
+% conflicting results g_{nm}(x_n,x_m): 66, 87, 99
+% aesthetic cases 4 agents: 93
 
 % --- Run Simulation for Each Algorithm ---
 for algo_idx = 1:length(algorithms_to_run)
@@ -39,7 +43,7 @@ for algo_idx = 1:length(algorithms_to_run)
 
     % --- Setup Random Seed ---
     % Apply random seed configuration
-    rng(8, "philox");  % Values from config could be used here in future
+    rng(random_seed, "philox");  % Values from config could be used here in future
 
 
     fprintf('Initializing environment, agents, and currents...\n');
@@ -97,6 +101,8 @@ for t_idx = 1:sim_params.time_steps
                 [planned_trajectories, metrics] = fullopt_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
             case {'sca', 'ssca'}
                 [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
+            case 'dssca'
+                [planned_trajectories, metrics] = dssca_multi_agent_planner(agents, env_params, current_params, sim_params, agent_params);
             otherwise
                 error('Unknown algorithm: %s. Valid options: fullOpt, sca, ssca', sim_params.algo);
         end
@@ -206,6 +212,9 @@ for i = 1:length(algorithms_to_run)
     fprintf('| %18d ', control_viol_test(i));
 end
 fprintf('|\n');
+
+formation_constraint_violations = cellfun(@(algo) all_metrics.(algo).formation_constraint_violations, algorithms_to_run);
+fprintf(data_format, 'Formation Violations', formation_constraint_violations);
 
 fprintf('%s\n', repmat('-', 1, 120));
 

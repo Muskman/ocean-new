@@ -1,7 +1,8 @@
-classdef ProblemBuilder < handle
+classdef ProblemBuilderD < handle
     properties (Access = private)
         % Symbolic variables
         P_sym                               % Decision variables (2*N_agents x T+1)
+        P_agent_sym
         
         % Problem parameters
         N_agents, T, dt
@@ -32,13 +33,16 @@ classdef ProblemBuilder < handle
         % Configuration
         config                              % What to include/exclude
         
+        % Safety margin
+        safety_margin
+        
         % Pre-allocation tracking indices (for constraint building)
         current_cell_idx
         current_bound_idx
         current_training_idx
         current_testing_idx
 
-        % for tracking linearized onstraint indices in ssca
+        % for tracking linearized constraint indices in ssca
         obstacle_constraint_indices
         collision_constraint_indices
         formation_constraint_indices
@@ -51,13 +55,13 @@ classdef ProblemBuilder < handle
         energy_training
         constraints_training
         control_constraints_training
-        formation_constraint_violations
         lbg_training
         ubg_training
 
         energy_testing
         constraints_testing
         control_constraints_testing
+        formation_constraint_violations
         lbg_testing
         ubg_testing
         
@@ -80,7 +84,7 @@ classdef ProblemBuilder < handle
     end
     
     methods
-        function obj = ProblemBuilder(agents, env_params, current_params, sim_params, agent_params, config)
+        function obj = ProblemBuilderD(agents, env_params, current_params, sim_params, agent_params, config)
             % Constructor - Initialize all parameters and setup
             import casadi.*
             
@@ -104,6 +108,9 @@ classdef ProblemBuilder < handle
             obj.dt = sim_params.dt;
             obj.ensemble_samples_sym = [];
             obj.ensemble_sample_idx = 0;
+            
+            % Safety margin (from original code)
+            obj.safety_margin = 0.2;
             
             % Initialize symbolic template system
             obj.P0_sym = [];
@@ -134,10 +141,10 @@ classdef ProblemBuilder < handle
             obj.setupOceanFunctions();
             obj.generateReferenceTrajectory();
 
-            if any(strcmp(obj.sim_params.algo, 'ssca'))
-                obj.G = 0;
-                obj.learning_rate = obj.sim_params.learning_rate;
-                obj.gradient_tracking_weight = obj.sim_params.gradient_tracking_weight;
+            if any(strcmp(obj.sim_params.algo, 'dssca'))
+                obj.G = zeros(obj.N_agents, 1);
+                obj.learning_rate = repmat(obj.sim_params.learning_rate, obj.N_agents, 1);
+                obj.gradient_tracking_weight = repmat(obj.sim_params.gradient_tracking_weight, obj.N_agents, 1);
                 obj.stochastic_gradient_norm = 0;
             end
         end
@@ -148,22 +155,20 @@ classdef ProblemBuilder < handle
             
             % P_sym: 2*N_agents x (T+1) matrix
             obj.P_sym = MX.sym('P', 2*obj.N_agents, obj.T+1);
+            obj.P_agent_sym = MX.sym('P_agent', 2, obj.T+1);
             
-            % Setup bounds on decision variables
-            w_size = numel(obj.P_sym);
-            obj.lbx = -inf(w_size, 1);
-            obj.ubx = inf(w_size, 1);
+            % Setup bounds on agent decision variables
+            obj.lbx = -inf(2*(obj.T+1), 1);
+            obj.ubx = inf(2*(obj.T+1), 1);
             
             % Apply environment bounds
             for k = 0:obj.T
-                for i = 1:obj.N_agents
-                    idx_x = (k * 2 * obj.N_agents) + 2*i - 1;
-                    idx_y = (k * 2 * obj.N_agents) + 2*i;
-                    obj.lbx(idx_x) = obj.env_params.x_limits(1) + obj.agent_params.radius;
-                    obj.ubx(idx_x) = obj.env_params.x_limits(2) - obj.agent_params.radius;
-                    obj.lbx(idx_y) = obj.env_params.y_limits(1) + obj.agent_params.radius;
-                    obj.ubx(idx_y) = obj.env_params.y_limits(2) - obj.agent_params.radius;
-                end
+                idx_x = (k * 2) + 1;
+                idx_y = (k * 2) + 2;
+                obj.lbx(idx_x) = obj.env_params.x_limits(1) + obj.agent_params.radius;
+                obj.ubx(idx_x) = obj.env_params.x_limits(2) - obj.agent_params.radius;
+                obj.lbx(idx_y) = obj.env_params.y_limits(1) + obj.agent_params.radius;
+                obj.ubx(idx_y) = obj.env_params.y_limits(2) - obj.agent_params.radius;
             end
         end
         
@@ -209,8 +214,8 @@ classdef ProblemBuilder < handle
         end
         
         function generateReferenceTrajectory(obj)
-            % Generate reference trajectory P0 using linear interpolation
             if strcmp(obj.sim_params.initial_guess, 'straightline')
+                % Generate reference trajectory P0 using linear interpolation
                 obj.P0 = zeros(2*obj.N_agents, obj.T+1);
                 for i = 1:obj.N_agents
                     start_pos = obj.agents(i).position;
@@ -224,141 +229,24 @@ classdef ProblemBuilder < handle
             elseif strcmp(obj.sim_params.initial_guess, 'aStar')
                 [obj.P0, ~] = aStarInit(obj.agents, obj.env_params, obj.current_params, obj.sim_params, obj.agent_params);
             end
-            obj.P0_old = obj.P0;
-            obj.z = zeros(2*obj.N_agents*(obj.T+1), 1);
+            obj.P0_old = repmat({obj.P0}, obj.N_agents, 1);
+
+            temp_z = zeros(2*(obj.T+1), 1);
+            obj.z = repmat({temp_z}, obj.N_agents, 1);
         end
 
-        function updateReferenceTrajectory(obj, P)
+        function updateReferenceTrajectory(obj, P, idx_agent)
             % Update reference trajectory
-            obj.P0_old = obj.P0;
+            obj.P0_old{idx_agent} = obj.P0;
             obj.P0 = P;
             
-            if obj.config.use_linear_approximation && obj.templates_built
+            if obj.config.use_linear_approximation
                 fprintf('Reference trajectory updated for linear approximation.\n');
             else
                 fprintf('Reference trajectory updated.\n');
             end
         end
         
-        function buildSymbolicTemplates(obj)
-            % Build symbolic templates for objective and constraints
-            % These templates are parameterized by P0_sym and can be materialized quickly
-            import casadi.*
-            
-            fprintf('Building symbolic templates for objective and constraints...\n');
-            
-            % Create symbolic reference trajectory
-            obj.P0_sym = MX.sym('P0', 2*obj.N_agents, obj.T+1);
-            obj.ensemble_samples_sym = MX.sym('ensemble_samples', Sparsity.dense(obj.current_params.num_ensemble_members,1));
-
-            % Build symbolic objective and control constraints template
-            symbolic_objective_template = MX.zeros(obj.current_params.num_ensemble_members, 1); 
-            formation_objective_template = MX.zeros(1,1); collision_objective_template = MX.zeros(1,1);
-            if obj.config.use_linear_approximation
-                obj.symbolic_control_constraints_template = cell(1, obj.N_agents*obj.T);
-            else
-                obj.symbolic_control_constraints_template = cell(1, obj.N_agents*obj.T*obj.current_params.num_ensemble_members);
-            end
-    
-            for k = 0:obj.T-1
-                Currents_at_P0_sym = cell(1, obj.current_params.num_ensemble_members+1);
-                Js_at_P0_sym = cell(1, obj.current_params.num_ensemble_members+1);
-                Currents_k_matrix = cell(1, obj.current_params.num_ensemble_members+1);
-                Currents_k_matrix_avg = MX.zeros(2, obj.N_agents);
-                
-                % Extract symbolic states and references
-                P_k = obj.P_sym(:, k+1);        % Current state
-                P_k_plus_1 = obj.P_sym(:, k+2); % Next state
-                P0_k = obj.P0_sym(:, k+1);      % Symbolic reference
-                disp_ground = P_k_plus_1 - P_k;
-                
-                % Reshape to matrix form for ocean functions
-                Pos_k_matrix = reshape(P_k, 2, obj.N_agents);
-                P0_k_matrix = reshape(P0_k, 2, obj.N_agents);
-                pose_diff = Pos_k_matrix - P0_k_matrix;
-                
-                if obj.config.use_linear_approximation
-                    % Symbolic ocean evaluations at reference point
-                    [Currents_at_P0_sym{:}] = obj.ocean_current_func(P0_k_matrix, k*obj.dt);
-                    [Js_at_P0_sym{:}] = obj.ocean_gradient_func(P0_k_matrix, k*obj.dt);
-                    
-                    n_ens = obj.current_params.num_ensemble_members;
-                    all_C0 = horzcat(Currents_at_P0_sym{1:n_ens});
-                    all_Js = horzcat(Js_at_P0_sym{1:n_ens});
-                    pd = repmat(pose_diff, 1, n_ens);
-                    
-                    a = all_Js(1,1:2:end); b = all_Js(1,2:2:end);
-                    c = all_Js(2,1:2:end); d = all_Js(2,2:2:end);
-                    
-                    all_Currents = all_C0 + [a.*pd(1,:)+b.*pd(2,:); c.*pd(1,:)+d.*pd(2,:)];
-                    
-                    Currents_k_matrix(1:n_ens) = mat2cell(all_Currents, 2, repmat(obj.N_agents, 1, n_ens));
-                else
-                    % Exact Symbolic ocean evaluations
-                    [Currents_k_matrix{:}] = obj.ocean_current_func(Pos_k_matrix, k*obj.dt);
-                end
-
-                % formation objective
-                if obj.sim_params.formation_enabled
-                    Centroid_k = sum2(Pos_k_matrix) / obj.N_agents;
-                    Relative_k = Pos_k_matrix - Centroid_k;
-                    formation_sq_k = sumsqr(reshape(Relative_k - obj.agent_params.formation_relative_positions, 2*obj.N_agents, 1));
-                    formation_objective_template = formation_objective_template + formation_sq_k;
-                else
-                    formation_objective_template = 0;
-                end
-
-                % collision objective
-                [i_idx, j_idx] = find(triu(ones(obj.N_agents), 1));
-                pos_i = Pos_k_matrix(:, i_idx);
-                pos_j = Pos_k_matrix(:, j_idx);
-                
-                dist_sq_vec = sum((pos_i - pos_j).^2, 1);
-
-                n_pairs = length(i_idx);
-                min_dist_agent_sq = repmat((2 * obj.agent_params.radius + obj.agent_params.safety_margin)^2, 1, n_pairs);
-
-                collision_obj_k = sum(max([-dist_sq_vec + min_dist_agent_sq; zeros(1, n_pairs)]));
-                collision_objective_template = collision_objective_template + collision_obj_k;
-                
-                for i = 1:obj.current_params.num_ensemble_members
-                    
-                    % Build template objective contribution
-                    Currents_k_vec = reshape(Currents_k_matrix{i}, 2*obj.N_agents, 1);
-                    disp_control = disp_ground - Currents_k_vec * obj.dt;
-                    disp_control_matrix = reshape(disp_control, 2, obj.N_agents);
-                    
-                    % Accumulate objective in symbolic template
-                    symbolic_objective_template(i) = symbolic_objective_template(i) + sumsqr(disp_control_matrix);
-
-                    % Per-agent control constraints
-                    if ~obj.config.use_linear_approximation
-                        for j = 1:obj.N_agents
-                            c_idx = obj.current_params.num_ensemble_members*obj.N_agents*k+obj.N_agents*(i-1)+j;
-                            obj.symbolic_control_constraints_template{c_idx} = sumsqr(disp_control_matrix(:, j));
-                        end
-                    end
-                end
-
-                if obj.config.use_linear_approximation
-                    for j = 1:obj.N_agents
-                        Currents_k_matrix_avg(:, j) = Currents_at_P0_sym{end}(:, j) + Js_at_P0_sym{end}(:, 2*(j-1)+1:2*j) * pose_diff(:, j);
-                    end
-                    Currents_k_vec_avg = reshape(Currents_k_matrix_avg, 2*obj.N_agents, 1);
-                    disp_control_avg = disp_ground - Currents_k_vec_avg * obj.dt;
-                    disp_control_matrix_avg = reshape(disp_control_avg, 2, obj.N_agents);
-                    for j = 1:obj.N_agents
-                        c_idx = obj.N_agents*k+j;
-                        obj.symbolic_control_constraints_template{c_idx} = sumsqr(disp_control_matrix_avg(:, j));
-                    end
-                end
-            end
-            obj.symbolic_objective_template = symbolic_objective_template'*obj.ensemble_samples_sym/sum(obj.ensemble_samples_sym) + obj.agent_params.formation_weight*formation_objective_template + obj.agent_params.collision_weight*collision_objective_template;
-            
-            obj.templates_built = true;
-            fprintf('Symbolic templates built successfully.\n');
-        end
-
         function buildBenchmarkingExpressions(obj)
             % Build symbolic benchmarking templates for objective and constraints
             import casadi.*
@@ -419,12 +307,12 @@ classdef ProblemBuilder < handle
             fprintf('Benchmarking expressions built successfully.\n');
         end
 
-        function buildApproximateTemplates(obj, idx_ensemble)
+        function buildApproximateAgentTemplates(obj, idx_agent, idx_ensemble)
             % Build symbolic templates for objective and constraints
             % These templates are parameterized by P0_sym and can be materialized quickly
             import casadi.*
             
-            fprintf('Building symbolic templates for objective and constraints...\n');
+            fprintf('Building symbolic agent templates for objective and constraints...\n');
             
             % Create symbolic reference trajectory
             % obj.P0_sym = MX.sym('P0', 2*obj.N_agents, obj.T+1);
@@ -433,33 +321,32 @@ classdef ProblemBuilder < handle
             % Build symbolic objective and control constraints template
             obj.symbolic_objective_template = MX.zeros(1, 1);
             if obj.config.use_linear_approximation
-                obj.symbolic_control_constraints_template = cell(1, obj.N_agents*obj.T);
+                obj.symbolic_control_constraints_template = cell(1, obj.T);
             else
-                obj.symbolic_control_constraints_template = cell(1, obj.N_agents*obj.T*obj.current_params.num_ensemble_members);
+                obj.symbolic_control_constraints_template = cell(1, obj.T*obj.current_params.num_ensemble_members);
             end
 
-            grad_old = zeros(size(obj.z));
-            grad = zeros(size(obj.z));
+            grad_old = zeros(size(obj.z{idx_agent}));
+            grad = zeros(size(obj.z{idx_agent}));
+
+            i_idx = repmat(idx_agent, obj.N_agents-1, 1);
+            j_idx = setdiff(1:obj.N_agents, idx_agent)';
             
             for k = 0:obj.T-1
-                Currents_at_P0_sym = cell(1, obj.current_params.num_ensemble_members+1);
-                Js_at_P0_sym = cell(1, obj.current_params.num_ensemble_members+1);
-                Currents_at_P0_sym_old = cell(1, obj.current_params.num_ensemble_members+1);
-                Js_at_P0_sym_old = cell(1, obj.current_params.num_ensemble_members+1);
-                Currents_k_matrix = MX.zeros(2, obj.N_agents);
-                Currents_k_matrix_avg = MX.zeros(2, obj.N_agents);
+                Currents_k_matrix = MX.zeros(2, 1);
+                Currents_k_matrix_avg = MX.zeros(2, 1);
                 
                 % Extract symbolic states and references
-                P_k = obj.P_sym(:, k+1);        % Current state
-                P_k_plus_1 = obj.P_sym(:, k+2); % Next state
-                P0_k = obj.P0(:, k+1); P0_k_plus_1 = obj.P0(:, k+2);
-                P0_k_old = obj.P0_old(:, k+1); P0_k_plus_1_old = obj.P0_old(:, k+2);
+                P_k = obj.P_agent_sym(:, k+1);        % Current state
+                P_k_plus_1 = obj.P_agent_sym(:, k+2); % Next state
+                P0_k = obj.P0(2*idx_agent-1:2*idx_agent, k+1); P0_k_plus_1 = obj.P0(2*idx_agent-1:2*idx_agent, k+2);
+                P0_k_old = obj.P0_old{idx_agent}(2*idx_agent-1:2*idx_agent, k+1); P0_k_plus_1_old = obj.P0_old{idx_agent}(2*idx_agent-1:2*idx_agent, k+2);
                 disp_ground = P_k_plus_1 - P_k; disp_ground_P0 = P0_k_plus_1 - P0_k; disp_ground_P0_old = P0_k_plus_1_old - P0_k_old;
                 
                 % Reshape to matrix form for ocean functions
-                Pos_k_matrix = reshape(P_k, 2, obj.N_agents);
-                P0_k_matrix = reshape(P0_k, 2, obj.N_agents);
-                P0_k_matrix_old = reshape(P0_k_old, 2, obj.N_agents);
+                Pos_k_matrix = reshape(P_k, 2, 1);
+                P0_k_matrix = reshape(P0_k, 2, 1);
+                P0_k_matrix_old = reshape(P0_k_old, 2, 1);
                 pose_diff = Pos_k_matrix - P0_k_matrix;
                 
                 % Symbolic ocean evaluations at reference point
@@ -476,44 +363,51 @@ classdef ProblemBuilder < handle
                 Js_at_P0_old = obj.ensemble_gradient_funcs{idx_ensemble}(P0_k_matrix_old, k*obj.dt);
 
                 % update here for the optimization
-                for j = 1:obj.N_agents
-                    Currents_k_matrix(:, j) = Currents_at_P0(:, j) + Js_at_P0(:, 2*(j-1)+1:2*j) * pose_diff(:, j);
+                for j = idx_agent
+                    Currents_k_matrix = Currents_at_P0 + Js_at_P0 * pose_diff;
                     
-                    grad(2*obj.N_agents*k+2*(j-1)+1:2*obj.N_agents*k+2*j) = grad(2*obj.N_agents*k+2*(j-1)+1:2*obj.N_agents*k+2*j) - 2 * (eye(2) + full(Js_at_P0(:, 2*(j-1)+1:2*j)) * obj.dt) * (disp_ground_P0(2*j-1:2*j) - full(Currents_at_P0(:, j)) * obj.dt);
-                    grad(2*obj.N_agents*(k+1)+2*(j-1)+1:2*obj.N_agents*(k+1)+2*j) = grad(2*obj.N_agents*(k+1)+2*(j-1)+1:2*obj.N_agents*(k+1)+2*j) + 2 * (disp_ground_P0(2*j-1:2*j) - full(Currents_at_P0(:, j)) * obj.dt);
+                    grad(2*k+1:2*k+2) = grad(2*k+1:2*k+2) - 2 * (eye(2) + full(Js_at_P0) * obj.dt) * (disp_ground_P0 - full(Currents_at_P0) * obj.dt);
+                    grad(2*k+3:2*k+4) = grad(2*k+3:2*k+4) + 2 * (disp_ground_P0 - full(Currents_at_P0) * obj.dt);
                     
-                    grad_old(2*obj.N_agents*k+2*(j-1)+1:2*obj.N_agents*k+2*j) = grad_old(2*obj.N_agents*k+2*(j-1)+1:2*obj.N_agents*k+2*j) - 2 * (eye(2) + full(Js_at_P0_old(:, 2*(j-1)+1:2*j)) * obj.dt) * (disp_ground_P0_old(2*j-1:2*j) - full(Currents_at_P0_old(:, j)) * obj.dt);
-                    grad_old(2*obj.N_agents*(k+1)+2*(j-1)+1:2*obj.N_agents*(k+1)+2*j) = grad_old(2*obj.N_agents*(k+1)+2*(j-1)+1:2*obj.N_agents*(k+1)+2*j) + 2 * (disp_ground_P0_old(2*j-1:2*j) - full(Currents_at_P0_old(:, j)) * obj.dt);
+                    grad_old(2*k+1:2*k+2) = grad_old(2*k+1:2*k+2) - 2 * (eye(2) + full(Js_at_P0_old) * obj.dt) * (disp_ground_P0_old - full(Currents_at_P0_old) * obj.dt);
+                    grad_old(2*k+3:2*k+4) = grad_old(2*k+3:2*k+4) + 2 * (disp_ground_P0_old - full(Currents_at_P0_old) * obj.dt);
                 end
                 
-                Currents_k_vec = reshape(Currents_k_matrix, 2*obj.N_agents, 1);
+                Currents_k_vec = reshape(Currents_k_matrix, 2, 1);
                 disp_control = disp_ground - Currents_k_vec * obj.dt;
-                disp_control_matrix = reshape(disp_control, 2, obj.N_agents);
+                disp_control_matrix = reshape(disp_control, 2, 1);
 
                 % formation objective
                 if obj.sim_params.formation_enabled
+                    P_k = MX.zeros(2*obj.N_agents, 1);
+                    P_k(2*idx_agent-1:2*idx_agent) = obj.P_agent_sym(:, k+1);
+                    idx_diff = setdiff(1:2*obj.N_agents, 2*idx_agent-1:2*idx_agent);
+                    P_k(idx_diff) = obj.P0(idx_diff, k+1); 
+                    Pos_k_matrix = reshape(P_k, 2, obj.N_agents);
+                    
                     Centroid_k = sum2(Pos_k_matrix) / obj.N_agents;
                     Relative_k = Pos_k_matrix - Centroid_k;
                     formation_obj_k = sumsqr(reshape(Relative_k - obj.agent_params.formation_relative_positions, 2*obj.N_agents, 1));
                 else
                     formation_obj_k = 0;
                 end
-
                 % collision objective
-                [i_idx, j_idx] = find(triu(ones(obj.N_agents), 1));
-                pos_i = Pos_k_matrix(:, i_idx);
-                pos_j = Pos_k_matrix(:, j_idx);
+                P0_matrix = reshape(obj.P0(:, k+1), 2, obj.N_agents);
                 
-                pos_i_P0 = P0_k_matrix(:, i_idx);
-                pos_j_P0 = P0_k_matrix(:, j_idx);
-                dist_sq_vec = -sum((pos_i_P0 - pos_j_P0).^2, 1) + 2*diag((pos_i_P0 - pos_j_P0)'*(pos_i - pos_j))';
-
-                n_pairs = length(i_idx);
-                min_dist_agent_sq = repmat((2 * obj.agent_params.radius + obj.agent_params.safety_margin)^2, 1, n_pairs);
+                % Get positions for all pairs
+                pos_i = repmat(Pos_k_matrix, 1, obj.N_agents-1);
+                pos_i_P0 = P0_matrix(:, i_idx);
+                pos_j_P0 = P0_matrix(:, j_idx);
+                
+                % Recompute linearized pairwise distances
+                min_dist_agent_sq = repmat((2 * obj.agent_params.radius + obj.agent_params.safety_margin)^2, 1, length(i_idx));                
+                dist_sq_vec = sum((pos_i_P0 - pos_j_P0).^2, 1) + 2*diag((pos_i_P0 - pos_j_P0)'*(pos_i - pos_i_P0))';
                 dist_indicator = double(sum((pos_i_P0 - pos_j_P0).^2, 1) < 2*min_dist_agent_sq);
-
                 if any(dist_indicator)
-                    collision_obj_k = sum(max([(-dist_sq_vec + min_dist_agent_sq).*dist_indicator; zeros(1, n_pairs)]));
+                    % disp('*******************');
+                    % fprintf('Dist indicator for agent %d: \n', idx_agent);
+                    % disp(dist_indicator);
+                    collision_obj_k = sum(max([(-dist_sq_vec + min_dist_agent_sq).*dist_indicator; zeros(1, length(i_idx))]));
                 else
                     collision_obj_k = 0;
                 end
@@ -524,42 +418,40 @@ classdef ProblemBuilder < handle
                 if obj.config.use_linear_approximation
                     Currents_at_P0_avg = obj.ensemble_current_funcs{obj.current_params.num_ensemble_members+1}(P0_k_matrix, k*obj.dt);
                     Js_at_P0_avg = obj.ensemble_gradient_funcs{obj.current_params.num_ensemble_members+1}(P0_k_matrix, k*obj.dt);
-                    for j = 1:obj.N_agents
-                        Currents_k_matrix_avg(:, j) = Currents_at_P0_avg(:, j) + Js_at_P0_avg(:, 2*(j-1)+1:2*j) * pose_diff(:, j);
-                    end
-                    Currents_k_vec_avg = reshape(Currents_k_matrix_avg, 2*obj.N_agents, 1);
+                    Currents_k_matrix_avg(:) = Currents_at_P0_avg + Js_at_P0_avg * pose_diff;
+                    Currents_k_vec_avg = reshape(Currents_k_matrix_avg, 2, 1);
                     disp_control_avg = disp_ground - Currents_k_vec_avg * obj.dt;
-                    disp_control_matrix_avg = reshape(disp_control_avg, 2, obj.N_agents);
-                    for j = 1:obj.N_agents
-                        c_idx = obj.N_agents*k+j;
-                        obj.symbolic_control_constraints_template{c_idx} = sumsqr(disp_control_matrix_avg(:, j));
-                    end
+                    disp_control_matrix_avg = reshape(disp_control_avg, 2, 1);
+                    obj.symbolic_control_constraints_template{k+1} = sumsqr(disp_control_matrix_avg);
                 end
             end
 
             %  + (1-obj.gradient_tracking_weight) * (obj.z(2*obj.N_agents*k+1:2*obj.N_agents*(k+2))-grad_old(2*obj.N_agents*k+1:2*obj.N_agents*(k+2)))'*[P_k_plus_1;P_k] + obj.sim_params.mu * sumsqr(P_k - P0_k);
-            obj.symbolic_objective_template = obj.symbolic_objective_template + (1-obj.gradient_tracking_weight) * (obj.z-grad_old)' * obj.P_sym(:) + obj.sim_params.mu * sumsqr(obj.P_sym - obj.P0);
+            % obj.symbolic_objective_template = obj.symbolic_objective_template + (1-obj.gradient_tracking_weight) * (obj.z-grad_old)' * obj.P_sym(:) + obj.sim_params.mu * sumsqr(obj.P_sym - obj.P0);
+
+            obj.symbolic_objective_template = obj.symbolic_objective_template + (1-obj.gradient_tracking_weight(idx_agent)) * (obj.z{idx_agent}-grad_old)' * obj.P_agent_sym(:) + obj.sim_params.mu * sumsqr(obj.P_agent_sym - obj.P0(2*idx_agent-1:2*idx_agent, :));
 
             % gradient tracking
-            obj.z = grad + (1-obj.gradient_tracking_weight) * (obj.z-grad_old);
+            obj.z{idx_agent} = grad + (1-obj.gradient_tracking_weight(idx_agent)) * (obj.z{idx_agent}-grad_old);
 
-            obj.G = obj.G + norm(grad)^2;
-            obj.learning_rate =  obj.sim_params.k_bar / (obj.sim_params.w + obj.G)^(1/3);
-            obj.gradient_tracking_weight = obj.sim_params.c * obj.learning_rate^2;
+            obj.G(idx_agent) = obj.G(idx_agent) + norm(grad)^2;
+            obj.learning_rate(idx_agent) =  obj.sim_params.k_bar / (obj.sim_params.w + obj.G(idx_agent))^(1/3);
+            obj.gradient_tracking_weight(idx_agent) = obj.sim_params.c * obj.learning_rate(idx_agent)^2;
             obj.stochastic_gradient_norm = norm(grad);
 
             obj.templates_built = false;
             fprintf('Symbolic templates built successfully.\n');
-            obj.updateObstacleConstraints();
+            obj.updateAgentObstacleConstraints(idx_agent);
             if obj.config.enable_collision_constraints && obj.N_agents > 1
-                obj.updateCollisionConstraints();
+                obj.updateAgentCollisionConstraints(idx_agent);
             end
+            % keyboard;
         end
         
-        function nlp = getParameterizedNLP(obj, idx_ensemble)
+        function nlp = getParameterizedNLP(obj, idx_agent, idx_ensemble)
             % Get parameterized NLP structure with P0 as parameter
             % If idx_ensemble not supplied, default to 1
-            if nargin < 2 || isempty(idx_ensemble)
+            if nargin < 3 || isempty(idx_ensemble)
                 idx_ensemble = randi(obj.current_params.num_ensemble_members, 1);
             end
             % Uses symbolic expressions (not Function objects) as required by CasADi
@@ -568,25 +460,21 @@ classdef ProblemBuilder < handle
             % Build symbolic templates if not already built
             if ~obj.templates_built
                 if obj.config.use_linear_approximation
-                    obj.buildApproximateTemplates(idx_ensemble);
-                else
-                    obj.buildSymbolicTemplates();
+                    obj.buildApproximateAgentTemplates(idx_agent, idx_ensemble);
                 end
             end
             
             % Decision variables (MX)
-            w = obj.P_sym(:);
+            w = obj.P_agent_sym(:);
 
             % Parameters (MX) - reference trajectory P0 and ensemble sample indicator
-            p = [obj.P0_sym(:); obj.ensemble_samples_sym(:)];
+            p = [reshape(obj.P0(2*idx_agent-1:2*idx_agent, :), 2*(obj.T+1), 1); obj.ensemble_samples_sym(:)];
             
             % Objective function (MX expression, not Function)
             f = obj.symbolic_objective_template;
             
             % Build constraints and bounds together - store for bounds method
-            if size(obj.constraint_bounds_lbg, 1) == 0
-                obj.buildAllConstraintsAndBounds();
-            end
+            obj.buildAgentConstraintsAndBounds(idx_agent);
             
             % Combine all constraints into single expression
             if ~isempty(obj.constraint_exprs)
@@ -608,7 +496,7 @@ classdef ProblemBuilder < handle
             end
             fprintf('Parameterized NLP created with %d parameters (symbolic expressions).\n', numel(p));
         end
-        
+
         function buildAllConstraintsAndBounds(obj)
             % Build ALL constraints and bounds in a single unified pass
             % Uses pre-allocation for performance
@@ -660,7 +548,7 @@ classdef ProblemBuilder < handle
             % Obstacle constraints
             if obj.config.enable_obstacle_constraints && ~isempty(obj.env_params.obstacles)
                 n_obs = length(obj.env_params.obstacles);
-                total_constraint_cells = total_constraint_cells + obj.T * obj.N_agents * n_obs;
+                total_constraint_cells = total_constraint_cells + obj.T * obj.N_agents;
                 total_bounds = total_bounds + obj.T * obj.N_agents * n_obs;
             end
             
@@ -742,13 +630,144 @@ classdef ProblemBuilder < handle
                 error('Internal error: lbg and ubg have different lengths!');
             end
         end
+        
+        function buildAgentConstraintsAndBounds(obj, idx_agent)
+            % Build ALL constraints and bounds in a single unified pass
+            % Uses pre-allocation for performance
+            
+            fprintf('Building constraints and bounds together (debug info):\n');
+            
+            % === STEP 1: Count total constraints upfront ===
+            total_constraint_cells = 0;
+            total_bounds = 0;
+            
+            % Control constraints
+            control_count = 0;
+            if obj.config.enable_control_constraints && ~isempty(obj.symbolic_control_constraints_template)
+                control_count = length(obj.symbolic_control_constraints_template);
+                total_constraint_cells = total_constraint_cells + control_count;
+                total_bounds = total_bounds + control_count;
+            end
+            
+            % Initial constraints (1 cell entry, 2*N_agents bounds)
+            if obj.config.enable_initial_constraints
+                total_constraint_cells = total_constraint_cells + 1;
+                total_bounds = total_bounds + 2;
+            end
+            
+            % Final constraints (1 cell entry, 2*N_agents bounds)
+            if obj.config.enable_final_constraints
+                total_constraint_cells = total_constraint_cells + 1;
+                total_bounds = total_bounds + 2;
+            end
+            
+            % Collision constraints
+            if obj.config.enable_collision_constraints && obj.N_agents > 1
+                if strcmp(obj.config.collision_method, 'pairwise')
+                    total_constraint_cells = total_constraint_cells + obj.T;  % 1 per timestep
+                    total_bounds = total_bounds + obj.T * (obj.N_agents - 1);
+                end
+            end
+            
+            % Formation constraints
+            % if obj.config.enable_formation_constraints && obj.sim_params.formation_enabled && obj.N_agents > 1
+            %     total_constraint_cells = total_constraint_cells + obj.T;  % 1 per timestep
+            %     total_bounds = total_bounds + obj.T * 2;
+            % end
+            
+            % Obstacle constraints
+            if obj.config.enable_obstacle_constraints && ~isempty(obj.env_params.obstacles)
+                n_obs = length(obj.env_params.obstacles);
+                total_constraint_cells = total_constraint_cells + obj.T;
+                total_bounds = total_bounds + obj.T * n_obs;
+            end
+            
+            % === STEP 2: Pre-allocate arrays ===
+            obj.constraint_exprs = cell(1, total_constraint_cells);
+            obj.constraint_bounds_lbg = zeros(total_bounds, 1);
+            obj.constraint_bounds_ubg = zeros(total_bounds, 1);
+            
+            % Reset tracking indices
+            obj.current_cell_idx = 0;
+            obj.current_bound_idx = 0;
+            
+            % === STEP 3: Fill arrays using index-based assignment ===
+            
+            % --- Control Constraints ---
+            if obj.config.enable_control_constraints && ~isempty(obj.symbolic_control_constraints_template)
+                obj.constraint_exprs(1:control_count) = obj.symbolic_control_constraints_template;
+                obj.current_cell_idx = control_count;
+                
+                if obj.config.use_linear_approximation
+                    max_control_disp_sq = ((1-3*obj.current_params.noise_level)*obj.agent_params.max_speed * obj.dt)^2;
+                else
+                    max_control_disp_sq = (obj.agent_params.max_speed * obj.dt)^2;
+                end
+                obj.constraint_bounds_lbg(1:control_count) = 0;
+                obj.constraint_bounds_ubg(1:control_count) = max_control_disp_sq;
+                obj.current_bound_idx = control_count;
+                
+                fprintf('  Control constraints: %d\n', control_count);
+            end
+
+            % --- Initial Constraints ---
+            if obj.config.enable_initial_constraints
+                initial_pos_vec = obj.agents(idx_agent).position;
+                obj.current_cell_idx = obj.current_cell_idx + 1;
+                obj.constraint_exprs{obj.current_cell_idx} = obj.P_agent_sym(:, 1) - initial_pos_vec;
+                
+                n_init = 2;
+                obj.constraint_bounds_lbg(obj.current_bound_idx+1:obj.current_bound_idx+n_init) = -eps;
+                obj.constraint_bounds_ubg(obj.current_bound_idx+1:obj.current_bound_idx+n_init) = eps;
+                obj.current_bound_idx = obj.current_bound_idx + n_init;
+                fprintf('  Initial constraints: %d\n', n_init);
+            end
+            
+            % --- Final Constraints ---
+            if obj.config.enable_final_constraints
+                final_pos_vec = obj.agents(idx_agent).goal;
+                obj.current_cell_idx = obj.current_cell_idx + 1;
+                obj.constraint_exprs{obj.current_cell_idx} = obj.P_agent_sym(:, obj.T+1) - final_pos_vec;
+                
+                n_final = 2;
+                obj.constraint_bounds_lbg(obj.current_bound_idx+1:obj.current_bound_idx+n_final) = -eps;
+                obj.constraint_bounds_ubg(obj.current_bound_idx+1:obj.current_bound_idx+n_final) = eps;
+                obj.current_bound_idx = obj.current_bound_idx + n_final;
+                fprintf('  Final constraints: %d\n', n_final);
+            end
+            
+            bench = false;
+
+            % --- Collision Constraints ---
+            if obj.config.enable_collision_constraints && obj.N_agents > 1
+                obj.addAgentCollisionConstraintsUnified(idx_agent, bench);
+            end
+            
+            % --- Formation Constraints ---
+            % if obj.config.enable_formation_constraints && obj.sim_params.formation_enabled && obj.N_agents > 1
+            %     obj.addAgentFormationConstraintsUnified(idx_agent, bench);
+            % end
+            
+            % --- Obstacle Constraints ---
+            if obj.config.enable_obstacle_constraints && ~isempty(obj.env_params.obstacles)
+                obj.addAgentObstacleConstraintsUnified(idx_agent, bench);
+            end
+            
+            fprintf('  Total bounds: %d\n', length(obj.constraint_bounds_lbg));
+            
+            % Verify constraint-bounds alignment
+            if length(obj.constraint_bounds_lbg) ~= length(obj.constraint_bounds_ubg)
+                error('Internal error: lbg and ubg have different lengths!');
+            end
+        end
 
         function buildBenchmarkingConstraintsAndBounds(obj)
             % Build ALL constraints and bounds in a single unified pass
             % Uses pre-allocation for performance
             
             fprintf('Building constraints and bounds together (debug info):\n');
-            
+            obj.buildAllConstraintsAndBounds();
+
             % --- Control Constraints ---
             control_count = length(obj.symbolic_control_constraints_template);
             
@@ -760,8 +779,8 @@ classdef ProblemBuilder < handle
             if obj.config.enable_final_constraints
                 n_additional = n_additional + 1;
             end
-            if obj.config.enable_collision_constraints && obj.N_agents > 1 
-                if strcmp(obj.config.collision_method, 'pairwise') % verify this
+            if obj.config.enable_collision_constraints && obj.N_agents > 1
+                if strcmp(obj.config.collision_method, 'pairwise')
                     n_additional = n_additional + obj.T;
                 else
                     n_additional = n_additional + obj.T * (obj.N_agents - 1);
@@ -867,52 +886,25 @@ classdef ProblemBuilder < handle
         
         function addCollisionConstraintsUnified(obj, bench)
             % Add collision constraints and bounds in unified manner
-            min_dist_agent_sq = (2 * obj.agent_params.radius + obj.agent_params.safety_margin)^2;
+            min_dist_agent_sq = (2 * obj.agent_params.radius + obj.safety_margin)^2;
             
             switch obj.config.collision_method
-                case 'minimum_distance'
-                    obj.addMinDistanceCollisionConstraintsUnified(min_dist_agent_sq, bench);
                 case 'pairwise'
                     obj.addPairwiseCollisionConstraintsUnified(min_dist_agent_sq, bench);
-                otherwise
-                    obj.addMinDistanceCollisionConstraintsUnified(min_dist_agent_sq, bench);
             end
         end
         
-        function addMinDistanceCollisionConstraintsUnified(obj, min_dist_agent_sq, bench)
-            % Add minimum distance collision constraints with bounds
-            % Uses pre-allocated arrays with index tracking
-            constraint_count = 0;
-            for k = 1:obj.T
-                Pos_k = reshape(obj.P_sym(:, k+1), 2, obj.N_agents);
-                P0_k = reshape(obj.P0(:, k+1), 2, obj.N_agents);
-                for i = 1:obj.N_agents-1
-                    other_indices = setdiff(i:obj.N_agents, i);
-                    if ~bench
-                        distances_sq = sum((Pos_k(:,i) - Pos_k(:,other_indices)).^2, 1);
-                        min_dist_sq = min(distances_sq);
-                        
-                        obj.current_cell_idx = obj.current_cell_idx + 1;
-                        obj.constraint_exprs{obj.current_cell_idx} = min_dist_sq;
-                        
-                        obj.current_bound_idx = obj.current_bound_idx + 1;
-                        obj.constraint_bounds_lbg(obj.current_bound_idx) = min_dist_agent_sq;
-                        obj.constraint_bounds_ubg(obj.current_bound_idx) = inf;
-                    else
-                        distances_sq_P0 = sum((P0_k(:,i) - P0_k(:,other_indices)).^2, 1);
-                        min_dist_sq_P0 = min(distances_sq_P0);
-                        
-                        obj.current_training_idx = obj.current_training_idx + 1;
-                        obj.current_testing_idx = obj.current_testing_idx + 1;
-                        obj.constraints_training{obj.current_training_idx} = min_dist_sq_P0;
-                        obj.constraints_testing{obj.current_testing_idx} = min_dist_sq_P0;
-                    end
-                    constraint_count = constraint_count + 1;
-                end
+        function addAgentCollisionConstraintsUnified(obj, idx_agent, bench)
+            % Add collision constraints and bounds in unified manner
+            min_dist_agent_sq = (2 * obj.agent_params.radius + obj.safety_margin)^2;
+            
+            switch obj.config.collision_method
+                case 'pairwise'
+                    obj.addPairwiseAgentCollisionConstraintsUnified(idx_agent, min_dist_agent_sq, bench);
             end
-            fprintf('  Collision (min_distance) constraints: %d\n', constraint_count);
         end
         
+
         function addPairwiseCollisionConstraintsUnified(obj, min_dist_agent_sq, bench)
             % Add pairwise collision constraints with bounds
             % Uses pre-allocated arrays with index tracking
@@ -938,7 +930,7 @@ classdef ProblemBuilder < handle
                     end
                     
                     obj.current_cell_idx = obj.current_cell_idx + 1;
-                    obj.constraint_exprs{obj.current_cell_idx} = dist_sq_vec'; % min_dist_agent_sq*ones(n_pairs, 1); 
+                    obj.constraint_exprs{obj.current_cell_idx} = dist_sq_vec';
 
                     % Track this index as a collision constraint
                     obj.collision_constraint_indices = [obj.collision_constraint_indices; obj.current_cell_idx];
@@ -962,6 +954,49 @@ classdef ProblemBuilder < handle
             fprintf('  Collision (pairwise) constraints: %d\n', constraint_count);
         end
         
+        function addPairwiseAgentCollisionConstraintsUnified(obj, idx_agent, min_dist_agent_sq, bench)
+            % Add pairwise collision constraints with bounds
+            % Uses pre-allocated arrays with index tracking
+            i_idx = repmat(idx_agent, obj.N_agents-1, 1);
+            j_idx = setdiff(1:obj.N_agents, idx_agent)';
+            
+            n_pairs = obj.N_agents - 1;
+            constraint_count = 0;
+            
+            for k = 1:obj.T
+                P_k_plus_1 = obj.P_agent_sym(:, k+1);
+                Pos_matrix = reshape(P_k_plus_1, 2, 1);
+                P0_k_plus_1 = obj.P0(:, k+1);
+                P0_matrix = reshape(P0_k_plus_1, 2, obj.N_agents);
+
+                if ~bench
+                    pos_i = Pos_matrix;
+                    pos_j = P0_matrix(:, j_idx);
+                    if ~obj.config.use_linear_approximation
+                        dist_sq_vec = sum((pos_i - pos_j).^2, 1);
+                    else
+                        pos_i_P0 = P0_matrix(:, i_idx);
+                        pos_j_P0 = P0_matrix(:, j_idx);
+                        dist_sq_vec = sum((pos_i_P0 - pos_j_P0).^2, 1) + 2*diag((pos_i_P0 - pos_j_P0)'*(pos_i - pos_i_P0))';
+                    end
+                    
+                    obj.current_cell_idx = obj.current_cell_idx + 1;
+                    obj.constraint_exprs{obj.current_cell_idx} = dist_sq_vec';
+
+                    % Track this index as a collision constraint
+                    obj.collision_constraint_indices = [obj.collision_constraint_indices; obj.current_cell_idx];
+            
+                    obj.constraint_bounds_lbg(obj.current_bound_idx+1:obj.current_bound_idx+n_pairs) = min_dist_agent_sq;
+                    obj.constraint_bounds_ubg(obj.current_bound_idx+1:obj.current_bound_idx+n_pairs) = inf;
+                    obj.current_bound_idx = obj.current_bound_idx + n_pairs;
+                end
+
+                constraint_count = constraint_count + n_pairs;
+            end
+            fprintf('  Collision (pairwise) constraints: %d\n', constraint_count);
+        end
+        
+
         function addFormationConstraintsUnified(obj, bench)
             % Add formation constraints with bounds
             % Uses pre-allocated arrays with index tracking
@@ -979,7 +1014,7 @@ classdef ProblemBuilder < handle
                     dev_sq = reshape(Relative_k - Target_relative, 2*obj.N_agents, 1);
                     
                     obj.current_cell_idx = obj.current_cell_idx + 1;
-                    obj.constraint_exprs{obj.current_cell_idx} = dev_sq*0; % dummy constraint
+                    obj.constraint_exprs{obj.current_cell_idx} = dev_sq;
 
                     % Track this index as a formation constraint
                     obj.formation_constraint_indices = [obj.formation_constraint_indices; obj.current_cell_idx];
@@ -994,10 +1029,11 @@ classdef ProblemBuilder < handle
                     Centroid_k_P0 = sum(P0_k_plus_1_matrix,2) / obj.N_agents;
                     Relative_k_P0 = P0_k_plus_1_matrix - Centroid_k_P0;
                     dev_sq_P0 = reshape(Relative_k_P0 - Target_relative, 2*obj.N_agents, 1);
+
+                    obj.formation_constraint_violations = [obj.formation_constraint_violations; dev_sq_P0];
                     
                     obj.current_training_idx = obj.current_training_idx + 1;
                     obj.current_testing_idx = obj.current_testing_idx + 1;
-                    obj.formation_constraint_violations = [obj.formation_constraint_violations; dev_sq_P0];
                     obj.constraints_training{obj.current_training_idx} = dev_sq_P0;
                     obj.constraints_testing{obj.current_testing_idx} = dev_sq_P0;
                 end
@@ -1007,12 +1043,49 @@ classdef ProblemBuilder < handle
             fprintf('  Formation constraints: %d\n', constraint_count);
         end
         
+        function addAgentFormationConstraintsUnified(obj, idx_agent, bench)
+            % Add formation constraints with bounds
+            % Uses pre-allocated arrays with index tracking
+            import casadi.*
+
+            formation_tolerance_sq_sum = (obj.agent_params.formation_tolerance^2) * obj.N_agents;
+            Target_relative = obj.agent_params.formation_relative_positions;
+            constraint_count = 0;
+            
+            for k = 1:obj.T
+
+                P_k_plus_1 = MX.zeros(2*obj.N_agents, 1);
+                P_k_plus_1(2*idx_agent-1:2*idx_agent) = obj.P_agent_sym(:, k+1);
+                idx_diff = setdiff(1:2*obj.N_agents, 2*idx_agent-1:2*idx_agent);
+                P_k_plus_1(idx_diff) = obj.P0(idx_diff, k+1); 
+                Pos_k_plus_1_matrix = reshape(P_k_plus_1, 2, obj.N_agents);
+                
+                if ~bench
+                    Centroid_k = sum2(Pos_k_plus_1_matrix) / obj.N_agents;
+                    Relative_k = Pos_k_plus_1_matrix - Centroid_k;
+                    dev_sq = reshape(Relative_k - Target_relative, 2*obj.N_agents, 1);
+                    
+                    obj.current_cell_idx = obj.current_cell_idx + 1;
+                    obj.constraint_exprs{obj.current_cell_idx} = dev_sq;
+                    
+                    n_bounds = 2*obj.N_agents;
+                    obj.constraint_bounds_lbg(obj.current_bound_idx+1:obj.current_bound_idx+n_bounds) = 0;
+                    obj.constraint_bounds_ubg(obj.current_bound_idx+1:obj.current_bound_idx+n_bounds) = formation_tolerance_sq_sum;
+                    obj.current_bound_idx = obj.current_bound_idx + n_bounds;
+                end
+
+                constraint_count = constraint_count + 2*obj.N_agents;
+            end
+            fprintf('  Agent Formation constraints: %d\n', constraint_count);
+        end
+        
+
         function addObstacleConstraintsUnified(obj, bench)
             % Add obstacle constraints with bounds
             % Uses pre-allocated arrays with index tracking
             obs_centers_matrix = cat(2, obj.env_params.obstacles.center);
             obs_radii = cat(2, obj.env_params.obstacles.radius);
-            min_dist_sq_all_obs = (obj.agent_params.radius + obs_radii + obj.agent_params.safety_margin).^2;
+            min_dist_sq_all_obs = (obj.agent_params.radius + obs_radii + obj.safety_margin).^2;
             n_obs = length(obs_radii);
             constraint_count = 0;
 
@@ -1037,9 +1110,10 @@ classdef ProblemBuilder < handle
 
                             % Track this index as an obstacle constraint
                             obj.obstacle_constraint_indices = [obj.obstacle_constraint_indices; obj.current_cell_idx];
+                
+                            obj.constraint_bounds_lbg(obj.current_bound_idx+1:obj.current_bound_idx+n_obs) = min_dist_sq_all_obs';
+                            obj.constraint_bounds_ubg(obj.current_bound_idx+1:obj.current_bound_idx+n_obs) = inf*ones(n_obs, 1);
                         end
-                        obj.constraint_bounds_lbg(obj.current_bound_idx+1:obj.current_bound_idx+n_obs) = min_dist_sq_all_obs';
-                        obj.constraint_bounds_ubg(obj.current_bound_idx+1:obj.current_bound_idx+n_obs) = inf*ones(n_obs, 1);
                         obj.current_bound_idx = obj.current_bound_idx + n_obs;
                     else
                         Agent_pos_ik_P0 = P0_k_plus_1_matrix(:, i); 
@@ -1058,10 +1132,52 @@ classdef ProblemBuilder < handle
             fprintf('  Obstacle constraints: %d\n', constraint_count);
         end
 
-        function updateObstacleConstraints(obj)
+        function addAgentObstacleConstraintsUnified(obj, idx_agent, bench)
+            % Add obstacle constraints with bounds
+            % Uses pre-allocated arrays with index tracking
+            obs_centers_matrix = cat(2, obj.env_params.obstacles.center);
+            obs_radii = cat(2, obj.env_params.obstacles.radius);
+            min_dist_sq_all_obs = (obj.agent_params.radius + obs_radii + obj.safety_margin).^2;
+            n_obs = length(obs_radii);
+            constraint_count = 0;
+
+            for k = 1:obj.T
+                P_k_plus_1 = obj.P_agent_sym(:, k+1);
+                Pos_k_plus_1_matrix = reshape(P_k_plus_1, 2, 1);
+                P0_k_plus_1 = obj.P0(2*idx_agent-1:2*idx_agent, k+1);
+                P0_k_plus_1_matrix = reshape(P0_k_plus_1, 2, 1);
+
+                for i = idx_agent
+                    if ~bench
+                        Agent_pos_ik = Pos_k_plus_1_matrix;
+                        for j = 1:n_obs
+                            if ~obj.config.use_linear_approximation
+                                dist_sq_all_obs = sumsqr(Agent_pos_ik - obs_centers_matrix(:, j));
+                            else
+                                Agent_pos_ik_P0 = P0_k_plus_1_matrix;
+                                dist_sq_all_obs = sumsqr(Agent_pos_ik_P0 - obs_centers_matrix(:, j)) + 2*(Agent_pos_ik_P0 - obs_centers_matrix(:, j))'*(Agent_pos_ik - Agent_pos_ik_P0);
+                            end
+                            obj.current_cell_idx = obj.current_cell_idx + 1;
+                            obj.constraint_exprs{obj.current_cell_idx} = dist_sq_all_obs;
+
+                            % Track this index as an obstacle constraint
+                            obj.obstacle_constraint_indices = [obj.obstacle_constraint_indices; obj.current_cell_idx];
+                        end
+                        obj.constraint_bounds_lbg(obj.current_bound_idx+1:obj.current_bound_idx+n_obs) = min_dist_sq_all_obs';
+                        obj.constraint_bounds_ubg(obj.current_bound_idx+1:obj.current_bound_idx+n_obs) = inf*ones(n_obs, 1);
+                        obj.current_bound_idx = obj.current_bound_idx + n_obs;
+                    end
+                    constraint_count = constraint_count + n_obs;
+                end
+            end
+            fprintf('  Agent Obstacle constraints: %d\n', constraint_count);
+        end
+
+
+        function updateAgentObstacleConstraints(obj, idx_agent)
             % Update obstacle constraints in constraint_exprs using current linear approximation
             % This is called from buildApproximateTemplates when using linear approximation
-            
+             
             if isempty(obj.obstacle_constraint_indices) || ~obj.config.use_linear_approximation
                 return;  % Nothing to update
             end
@@ -1073,15 +1189,15 @@ classdef ProblemBuilder < handle
             % Update each tracked obstacle constraint index
             constraint_idx = 1;  % Index within obstacle_constraint_indices
             for k = 1:obj.T
-                P_k_plus_1 = obj.P_sym(:, k+1);
-                Pos_k_plus_1_matrix = reshape(P_k_plus_1, 2, obj.N_agents);
-                P0_k_plus_1 = obj.P0(:, k+1);
-                P0_k_plus_1_matrix = reshape(P0_k_plus_1, 2, obj.N_agents);
+                P_k_plus_1 = obj.P_agent_sym(:, k+1);
+                Pos_k_plus_1_matrix = reshape(P_k_plus_1, 2, 1);
+                P0_k_plus_1 = obj.P0(2*idx_agent-1:2*idx_agent, k+1);
+                P0_k_plus_1_matrix = reshape(P0_k_plus_1, 2, 1);
         
-                for i = 1:obj.N_agents
+                for i = idx_agent
                     % Get current positions
-                    Agent_pos_ik = Pos_k_plus_1_matrix(:, i);
-                    Agent_pos_ik_P0 = P0_k_plus_1_matrix(:, i);
+                    Agent_pos_ik = Pos_k_plus_1_matrix;
+                    Agent_pos_ik_P0 = P0_k_plus_1_matrix;
 
                     for j = 1:n_obs
                         % Recompute linearized obstacle distance
@@ -1093,14 +1209,14 @@ classdef ProblemBuilder < handle
                         obj.constraint_exprs{cell_idx} = dist_sq_linearized;
                         
                         constraint_idx = constraint_idx + 1;
-                    end
+                    end  
                 end
             end
             
-            fprintf('Updated %d obstacle constraints with linear approximation\n', length(obj.obstacle_constraint_indices));
+            fprintf('Updated %d agent obstacle constraints with linear approximation\n', length(obj.obstacle_constraint_indices));
         end
         
-        function updateCollisionConstraints(obj)
+        function updateAgentCollisionConstraints(obj, idx_agent)
             % Update pairwise collision constraints in constraint_exprs using current linear approximation
 
 
@@ -1108,25 +1224,25 @@ classdef ProblemBuilder < handle
                 return;  % Nothing to update
             end
             
-            [i_idx, j_idx] = find(triu(ones(obj.N_agents), 1));
-            % min_dist_agent_sq = (2 * obj.agent_params.radius + obj.agent_params.safety_margin)^2;
+            i_idx = repmat(idx_agent, obj.N_agents-1, 1);
+            j_idx = setdiff(1:obj.N_agents, idx_agent)';
+            % min_dist_agent_sq = (2 * obj.agent_params.radius + obj.safety_margin)^2;
             
             % Update each tracked collision constraint index
             constraint_idx = 1;  % Index within collision_constraint_indices
             for k = 1:obj.T
-                P_k_plus_1 = obj.P_sym(:, k+1);
-                Pos_matrix = reshape(P_k_plus_1, 2, obj.N_agents);
+                P_k_plus_1 = obj.P_agent_sym(:, k+1);
+                Pos_matrix = P_k_plus_1;
                 P0_k_plus_1 = obj.P0(:, k+1);
                 P0_matrix = reshape(P0_k_plus_1, 2, obj.N_agents);
                 
                 % Get positions for all pairs
-                pos_i = Pos_matrix(:, i_idx);
-                pos_j = Pos_matrix(:, j_idx);
+                pos_i = repmat(Pos_matrix, 1, obj.N_agents-1);
                 pos_i_P0 = P0_matrix(:, i_idx);
                 pos_j_P0 = P0_matrix(:, j_idx);
                 
                 % Recompute linearized pairwise distances
-                dist_sq_vec = -sum((pos_i_P0 - pos_j_P0).^2, 1) + 2*diag((pos_i_P0 - pos_j_P0)'*(pos_i - pos_j))';
+                dist_sq_vec = sum((pos_i_P0 - pos_j_P0).^2, 1) + 2*diag((pos_i_P0 - pos_j_P0)'*(pos_i - pos_i_P0))';
                 
                 % Update the corresponding constraint_exprs entry
                 cell_idx = obj.collision_constraint_indices(constraint_idx);
@@ -1152,9 +1268,10 @@ classdef ProblemBuilder < handle
             fprintf('Returning cached constraint bounds: %d constraints\n', length(lbg));
         end
         
-        function w0 = getInitialGuess(obj)
+        function w0 = getInitialGuess(obj, idx_agent)
             % Return flattened P0 as initial guess
-            w0 = obj.P0(:);
+            w0 = obj.P0(2*idx_agent-1:2*idx_agent, :);
+            w0 = w0(:);
         end
 
         function metrics = getBenchmarkingMetrics(obj)

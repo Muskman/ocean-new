@@ -1,23 +1,46 @@
-function [initPath, map] = findOMap(opts)
-    % finds occupancy map for environment 
+function [initPath, map] = aStarInit(agents, env_params, current_params, sim_params, agent_params)
+    % finds initial guess using astar grid search in an occupancy map for environment 
+    % agents, env_params, sim_params, agent_params, current_params
 
-mag = opts.mag;
-X_lim = opts.X_lim; Y_lim = opts.Y_lim; 
-x_obs = opts.x_obs;
-r_obs = opts.r_obs; r_a = opts.r_a;
-n_obs = opts.n_obs;
-map = zeros(size(mag));
-[y_lim_idx, x_lim_idx] = size(map);
+    nx_contour = 500; ny_contour = 500;
+    x_vec_contour = linspace(env_params.x_limits(1), env_params.x_limits(2), nx_contour);
+    y_vec_contour = linspace(env_params.y_limits(1), env_params.y_limits(2), ny_contour);
+    [X_grid_contour, Y_grid_contour] = meshgrid(x_vec_contour, y_vec_contour);
 
-for i = 1:x_lim_idx
-    for j = 1:y_lim_idx
-        for k = 1:n_obs
-            if norm([X_lim(1,i);Y_lim(j,1)]-x_obs(:,k)) <= r_obs(k)+r_a
-                map(j,i) = 1;
+    contour_positions = [X_grid_contour(:)'; Y_grid_contour(:)']; % Create 2xN matrix
+    [U_grid_contour_flat, V_grid_contour_flat] = calculate_ocean_current_vectorized(contour_positions, 0, current_params);
+    Current_Mag_flat = sqrt(U_grid_contour_flat.^2 + V_grid_contour_flat.^2);
+    % Reshape back to grid format
+    Current_Mag = reshape(Current_Mag_flat, size(X_grid_contour));
+    U = reshape(U_grid_contour_flat, size(X_grid_contour));
+    V = reshape(V_grid_contour_flat, size(Y_grid_contour));
+
+    dt = sim_params.dt;
+
+    opts.U = U;
+    opts.V = V;
+    opts.X_lim = X_grid_contour;
+    opts.Y_lim = Y_grid_contour;
+    
+    inflate = (agent_params.safety_margin + agent_params.radius);
+
+    mag = Current_Mag;
+    % X_lim = env_params.x_limits; Y_lim = env_params.y_limits; 
+    x_obs = cat(2,env_params.obstacles.center);
+    r_obs = cat(2,env_params.obstacles.radius); r_a = agent_params.radius;
+    n_obs = length(env_params.obstacles); n_agents = length(agents);
+    map = zeros(size(mag));
+    [y_lim_idx, x_lim_idx] = size(map);
+
+    for i = 1:x_lim_idx
+        for j = 1:y_lim_idx
+            for k = 1:n_obs
+                if norm([opts.X_lim(1,i);opts.Y_lim(j,1)]-x_obs(:,k)) <= r_obs(k)+r_a
+                    map(j,i) = 1;
+                end
             end
         end
     end
-end
 
 %     for i = 1:opts.n_agents
 %         x_start = opts.x_start(2*i-1:2*i); x_goal = opts.x_goal(2*i-1:2*i);
@@ -27,8 +50,8 @@ scenario = robotScenario(UpdateRate=1,StopTime=10);
 addMesh(scenario,"Plane", Size=[5 5], Position = [0 0 0], Color=[0.7 0.7 0.7]);
 r_obs_c = r_obs/(opts.X_lim(1,2)-opts.X_lim(1,1));
 for k = 1:n_obs
-    x_obs_c = [find(abs(opts.X_lim(1,:)-opts.x_obs(1,k))==min(abs(opts.X_lim(1,:)-opts.x_obs(1,k)))); ...
-               find(abs(opts.Y_lim(:,1)-opts.x_obs(2,k))==min(abs(opts.Y_lim(:,1)-opts.x_obs(2,k))))];
+    x_obs_c = [find(abs(opts.X_lim(1,:)-x_obs(1,k))==min(abs(opts.X_lim(1,:)-x_obs(1,k)))); ...
+               find(abs(opts.Y_lim(:,1)-x_obs(2,k))==min(abs(opts.Y_lim(:,1)-x_obs(2,k))))];
     addMesh(scenario,"Cylinder",Size = [r_obs_c(k) 1],Position=[x_obs_c' 0],IsBinaryOccupied=true);
 end
 % show3D(scenario);
@@ -38,7 +61,7 @@ end
 %                                    GridOriginInLocal=[X_lim(1,1) Y_lim(1,1)],MapSize=[X_lim(1,end)-X_lim(1,1),Y_lim(end,1)-Y_lim(1,1)],MapResolution=1);
 
 occupancyMap = binaryOccupancyMap(scenario,MapHeightLimits=[-0.1 0.1], ...
-                                    GridOriginInLocal=[0 0],MapSize=[size(X_lim,2)-1,size(Y_lim,1)-1],MapResolution=1);
+                                    GridOriginInLocal=[0 0],MapSize=[size(opts.X_lim,2)-1,size(opts.Y_lim,1)-1],MapResolution=1);
 
 
 
@@ -49,31 +72,31 @@ hold on
 a = [size(opts.X_lim,2),size(opts.Y_lim,1)];
 temp_x_lim = meshgrid(1:4:a(1),1:4:a(2)); temp_y_lim = meshgrid(1:4:a(2),1:4:a(1))';
 % quiver(opts.X_lim(1:4:end,1:4:end),opts.Y_lim(1:4:end,1:4:end),opts.U(1:4:end,1:4:end),opts.V(1:4:end,1:4:end),'k','LineWidth',0.8)
-quiver(temp_x_lim,temp_y_lim,opts.U(1:4:end,1:4:end),opts.V(1:4:end,1:4:end),'k','LineWidth',0.8)
+quiver(temp_x_lim,temp_y_lim,U(1:4:end,1:4:end),V(1:4:end,1:4:end),'k','LineWidth',0.8)
 
-mPath = [];
+mPath = cell(n_agents,1);
 
-for i = 1:opts.n_agents
+for i = 1:n_agents
     if i==1
         occupancyMap.setOccupancy(flipud(occupancyMap.getOccupancy))
-        occupancyMap.inflate(opts.inflate)
+        occupancyMap.inflate(inflate)
     end
     planner = plannerAStarGrid(occupancyMap);
-    planner.GCostFcn = @(pose1,pose2)oceanMovementCost(pose1,pose2,opts.dt(i),opts);
+    planner.GCostFcn = @(pose1,pose2)oceanMovementCost(pose1,pose2,dt,opts);
     planner.HCostFcn = @(pose1,pose2) 0;
 
     % fprintf('For real environments, start and goal is not set to grid points. Will throw error if run.')
 
-    x_start_c = find(abs(opts.X_lim(1,:) - opts.x_start(2*i-1))<sqrt(eps));
-    y_start_c = find(abs(opts.Y_lim(:,1) - opts.x_start(2*i))<sqrt(eps));
+    x_start_c = find(abs(opts.X_lim(1,:) - agents(i).position(1))==min(abs(opts.X_lim(1,:) - agents(i).position(1))));
+    y_start_c = find(abs(opts.Y_lim(:,1) - agents(i).position(2))==min(abs(opts.Y_lim(:,1) - agents(i).position(2))));
 
-    x_goal_c = find(abs(opts.X_lim(1,:) - opts.x_goal(2*i-1))<sqrt(eps));
-    y_goal_c = find(abs(opts.Y_lim(:,1) - opts.x_goal(2*i))<sqrt(eps));
+    x_goal_c = find(abs(opts.X_lim(1,:) - agents(i).goal(1))==min(abs(opts.X_lim(1,:) - agents(i).goal(1))));
+    y_goal_c = find(abs(opts.Y_lim(:,1) - agents(i).goal(2))==min(abs(opts.Y_lim(:,1) - agents(i).goal(2))));
 
     start = fliplr([x_start_c y_start_c]); goal = fliplr([x_goal_c y_goal_c]);  
     path = plan(planner,start,goal);
 
-    l = size(path,1); T = opts.T;
+    l = size(path,1); T = sim_params.planning_horizon;
     % if l>T
     %     idx = [2:round(l/T):l-1];
     %     if length(idx) > T-2
@@ -81,15 +104,18 @@ for i = 1:opts.n_agents
     %     end
     %     idx = [1 idx l];
     % end
-    if l > T
-        idx = (l-2)/(T-2);
+    if l > T+1
+        idx = (l-2)/(T-1);
         idx = [2,idx:idx:l-1];
-        idx = idx(1:T-2); % Keep T-2 rows in between
+        idx = idx(1:T-1); % Keep T-1 rows in between
         idx = round([1,idx,l]);
+    else
+        keyboard
     end
 
     try
-        mPath = [mPath; path(idx,[2 1])];
+        mPath{i} = path(idx,[2 1]);
+        mPath{i} = [opts.X_lim(1,mPath{i}(:,1))' opts.Y_lim(mPath{i}(:,2),1)]';
     catch
         keyboard
     end
@@ -102,10 +128,10 @@ end
 
 hold off
 
-mPath = [X_lim(1,mPath(:,1))' Y_lim(mPath(:,2),1)];
-
-initPath = reshape(mPath',opts.n_agents*2*T,1);
-fprintf('Generated initial path with %d waypoints\n', size(mPath,1)/2)
+initPath = cat(1,mPath{:});
+initPath(:,1) = cat(1,agents.position);
+initPath(:,end) = cat(1,agents.goal);
+fprintf('Generated initial path for %d agents with %d waypoints\n', n_agents, size(initPath,2))
 
 % figure
 % show(planner)

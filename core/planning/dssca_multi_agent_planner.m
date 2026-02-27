@@ -8,7 +8,7 @@ function [planned_trajectories, metrics] = dssca_multi_agent_planner(agents, env
     config = ProblemBuilder.getDefaultConfig();
     % You can customize configuration here if needed
     config.use_linear_approximation = true;
-    config.enable_formation_constraints = true;
+    config.enable_formation_constraints = false;
     % config.enable_collision_constraints = false;
      
     builder = ProblemBuilderD(agents, env_params, current_params, sim_params, agent_params, config);
@@ -49,10 +49,10 @@ function [planned_trajectories, metrics] = dssca_multi_agent_planner(agents, env
         % end
         
         % Case 2: select agent based on iteration number
-        % idx_agent = mod(iter+1, length(agents)) + 1;
+        idx_agent = mod(iter+1, length(agents)) + 1;
         
         % Case 3: random selection of agent
-        idx_agent = randi(length(agents));
+        % idx_agent = randi(length(agents));
         
         fprintf('Selected agent %d for planning.\n', idx_agent);
 

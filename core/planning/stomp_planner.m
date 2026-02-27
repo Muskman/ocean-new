@@ -12,15 +12,21 @@ function [planned_trajectories, metrics] = stomp_planner(agents, env_params, cur
     % mag_step = sim_params.stomp_mag_step;
     % c_d = agent_params.drag_coefficient;
 
-    num_its = 200;
+    num_its = 100;
     decay_fact = 0.99;
-    N = 10;
+    N = 50;
     threshold = 1e-6;
-    mag_step = 0.3*1e-1;
+    mag_step = 5*1e-2;
     c_d = 3;
-
-    opts.vis_baselines = true;
+    sim_params.initial_guess = 'straightline';
+    
+    opts.vis_baselines = false;
     opts.current_params = current_params;
+    
+    opts.n_obs = length(env_params.obstacles);
+    opts.x_obs = cat(2,env_params.obstacles.center);
+    opts.r_obs = cat(2,env_params.obstacles.radius);
+    opts.r_a = agent_params.radius;
 
     % x_min = env_params.x_limits(1);
     % x_max = env_params.x_limits(2);
@@ -46,18 +52,33 @@ function [planned_trajectories, metrics] = stomp_planner(agents, env_params, cur
     mag = reshape(Current_Mag_flat, size(X_grid_contour));
 
     builder = ProblemBuilder(agents, env_params, current_params, sim_params, agent_params, ProblemBuilder.getDefaultConfig());
-    P0 = builder.P0; P0(:, 0.5*T+1) = [];
+    P0_final = builder.P0;
 
-    path = [P0; repmat(sim_params.dt, 1, T)]';
-    % path = flipud(path);
+    planned_trajectories = cell(length(agents), 1);
+    training_time = 0;
     
-    [STOMP_path, STOMP_energy,cost_STOMP,V_rel_i,V_abs_i] = STOMP_dylan_mohan(v_max,N,num_its,decay_fact,...
-                                            T,threshold,mag_step,X_grid_contour,Y_grid_contour,U,V,mag,path,c_d,...
-                                            x_min,x_max,y_min,y_max,U,V,opts);
+    for i = 1:length(agents)
+        P0 = builder.P0(2*i-1:2*i,:); % P0(:, 0.5*T+1) = [];
+        path = [P0; repmat(sim_params.dt, 1, T+1)]';
+        % path = flipud(path);
 
-    planned_trajectories = STOMP_path;
-    metrics = struct('STOMP_energy', STOMP_energy, 'cost_STOMP', cost_STOMP, 'V_rel_i', V_rel_i, 'V_abs_i', V_abs_i);
+        t_start = tic;
+        
+        [STOMP_path, STOMP_energy,cost_STOMP,V_rel_i,V_abs_i] = STOMP_dylan_mohan(v_max,N,num_its,decay_fact,...
+                                                T+1,threshold,mag_step,X_grid_contour,Y_grid_contour,U,V,mag,path,c_d,...
+                                                x_min,x_max,y_min,y_max,U,V,opts);
 
-    close all
+        training_time = training_time + toc(t_start);
 
+        planned_trajectories{i} = struct('planned_positions', STOMP_path(:,1:2)');
+        P0_final(2*i-1:2*i,:) = STOMP_path(:,1:2)';                                             
+    end
+    
+    builder.updateReferenceTrajectory(P0_final);
+    builder.buildAllConstraintsAndBounds();
+    builder.buildBenchmarkingExpressions();
+    metrics = builder.getBenchmarkingMetrics();
+    metrics.training_time = training_time;
+    metrics.formulation_time = 0;
+    metrics.cost_STOMP = cost_STOMP;
 end

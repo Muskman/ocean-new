@@ -22,7 +22,7 @@ function [initPath, map] = aStarInit(agents, env_params, current_params, sim_par
     opts.X_lim = X_grid_contour;
     opts.Y_lim = Y_grid_contour;
     
-    inflate = (agent_params.safety_margin + agent_params.radius);
+    inflate = (agent_params.safety_margin + agent_params.radius)*4;
 
     mag = Current_Mag;
     % X_lim = env_params.x_limits; Y_lim = env_params.y_limits; 
@@ -74,64 +74,117 @@ temp_x_lim = meshgrid(1:4:a(1),1:4:a(2)); temp_y_lim = meshgrid(1:4:a(2),1:4:a(1
 % quiver(opts.X_lim(1:4:end,1:4:end),opts.Y_lim(1:4:end,1:4:end),opts.U(1:4:end,1:4:end),opts.V(1:4:end,1:4:end),'k','LineWidth',0.8)
 quiver(temp_x_lim,temp_y_lim,U(1:4:end,1:4:end),V(1:4:end,1:4:end),'k','LineWidth',0.8)
 
-mPath = cell(n_agents,1);
+if ~sim_params.formation_enabled
+    mPath = cell(n_agents,1);
+    occupancyMap.setOccupancy(flipud(occupancyMap.getOccupancy))
+    occupancyMap.inflate(inflate)
+    for i = 1:n_agents
+        planner = plannerAStarGrid(occupancyMap);
+        planner.GCostFcn = @(pose1,pose2)oceanMovementCost(pose1,pose2,dt,opts);
+        planner.HCostFcn = @(pose1,pose2) 0;
 
-for i = 1:n_agents
-    if i==1
-        occupancyMap.setOccupancy(flipud(occupancyMap.getOccupancy))
-        occupancyMap.inflate(inflate)
+        % fprintf('For real environments, start and goal is not set to grid points. Will throw error if run.')
+
+        x_start_c = find(abs(opts.X_lim(1,:) - agents(i).start(1))==min(abs(opts.X_lim(1,:) - agents(i).start(1))));
+        y_start_c = find(abs(opts.Y_lim(:,1) - agents(i).start(2))==min(abs(opts.Y_lim(:,1) - agents(i).start(2))));
+
+        x_goal_c = find(abs(opts.X_lim(1,:) - agents(i).goal(1))==min(abs(opts.X_lim(1,:) - agents(i).goal(1))));
+        y_goal_c = find(abs(opts.Y_lim(:,1) - agents(i).goal(2))==min(abs(opts.Y_lim(:,1) - agents(i).goal(2))));
+
+        start = fliplr([x_start_c y_start_c]); 
+        goal = fliplr([x_goal_c y_goal_c]);  
+        path = plan(planner, start, goal);
+
+        l = size(path,1); 
+        T = sim_params.planning_horizon;
+        if l > T+1
+            idx = (l-2)/(T-1);
+            idx = [2, idx:idx:l-1];
+            idx = idx(1:T-1); % Keep T-1 rows in between
+            idx = round([1, idx, l]);
+            mPath{i} = path(idx, [2 1]);
+            mPath{i} = [opts.X_lim(1, mPath{i}(:,1))' opts.Y_lim(mPath{i}(:,2), 1)]';
+        else
+            % If the path is too short, generate a straight line with 201 waypoints between start and goal in continuous space.
+            % Obtain agent's real start and goal positions
+            xy_start = agents(i).start(:);
+            xy_goal = agents(i).goal(:);
+            num_waypoints = T+1;
+            line_path = [linspace(xy_start(1), xy_goal(1), num_waypoints); ...
+                        linspace(xy_start(2), xy_goal(2), num_waypoints)];
+            mPath{i} = line_path;
+        end
+        plot(path(:,2), path(:,1),'r','LineWidth',2,'LineStyle','-.')
+
+        plot(start(2),start(1),'g.','MarkerSize',20)
+        plot(goal(2),goal(1),'r.','MarkerSize',20)
     end
+
+    hold off
+
+    initPath = cat(1,mPath{:});
+    initPath(:,1) = cat(1,agents.start);
+    initPath(:,end) = cat(1,agents.goal);
+    fprintf('Generated initial path for %d agents with %d waypoints\n', n_agents, size(initPath,2))
+else
+    start_centroid = mean(cat(2,agents.start), 2);
+    goal_centroid = mean(cat(2,agents.goal), 2);
+    
+    occupancyMap.setOccupancy(flipud(occupancyMap.getOccupancy))
+    occupancyMap.inflate(inflate+agent_params.formation_inter_agent_distance*2)
+
     planner = plannerAStarGrid(occupancyMap);
     planner.GCostFcn = @(pose1,pose2)oceanMovementCost(pose1,pose2,dt,opts);
     planner.HCostFcn = @(pose1,pose2) 0;
 
     % fprintf('For real environments, start and goal is not set to grid points. Will throw error if run.')
 
-    x_start_c = find(abs(opts.X_lim(1,:) - agents(i).position(1))==min(abs(opts.X_lim(1,:) - agents(i).position(1))));
-    y_start_c = find(abs(opts.Y_lim(:,1) - agents(i).position(2))==min(abs(opts.Y_lim(:,1) - agents(i).position(2))));
+    x_start_c = find(abs(opts.X_lim(1,:) - start_centroid(1))==min(abs(opts.X_lim(1,:) - start_centroid(1))));
+    y_start_c = find(abs(opts.Y_lim(:,1) - start_centroid(2))==min(abs(opts.Y_lim(:,1) - start_centroid(2))));
 
-    x_goal_c = find(abs(opts.X_lim(1,:) - agents(i).goal(1))==min(abs(opts.X_lim(1,:) - agents(i).goal(1))));
-    y_goal_c = find(abs(opts.Y_lim(:,1) - agents(i).goal(2))==min(abs(opts.Y_lim(:,1) - agents(i).goal(2))));
+    x_goal_c = find(abs(opts.X_lim(1,:) - goal_centroid(1))==min(abs(opts.X_lim(1,:) - goal_centroid(1))));
+    y_goal_c = find(abs(opts.Y_lim(:,1) - goal_centroid(2))==min(abs(opts.Y_lim(:,1) - goal_centroid(2))));
 
-    start = fliplr([x_start_c y_start_c]); goal = fliplr([x_goal_c y_goal_c]);  
-    path = plan(planner,start,goal);
+    start = fliplr([x_start_c y_start_c]); 
+    goal = fliplr([x_goal_c y_goal_c]);  
+    path = plan(planner, start, goal);
 
-    l = size(path,1); T = sim_params.planning_horizon;
-    % if l>T
-    %     idx = [2:round(l/T):l-1];
-    %     if length(idx) > T-2
-    %         idx(randi(length(idx),length(idx)-opts.T+2,1)) = [];
-    %     end
-    %     idx = [1 idx l];
-    % end
+    l = size(path,1); 
+    T = sim_params.planning_horizon;
     if l > T+1
         idx = (l-2)/(T-1);
-        idx = [2,idx:idx:l-1];
+        idx = [2, idx:idx:l-1];
         idx = idx(1:T-1); % Keep T-1 rows in between
-        idx = round([1,idx,l]);
+        idx = round([1, idx, l]);
+        mPath = path(idx, [2 1]);
+        mPath = [opts.X_lim(1, mPath(:,1))' opts.Y_lim(mPath(:,2), 1)]';
     else
-        keyboard
+        % If the path is too short, generate a straight line with 201 waypoints between start and goal in continuous space.
+        % Obtain agent's real start and goal positions
+        xy_start = start_centroid;
+        xy_goal = goal_centroid;
+        num_waypoints = T+1;
+        line_path = [linspace(xy_start(1), xy_goal(1), num_waypoints); ...
+                    linspace(xy_start(2), xy_goal(2), num_waypoints)];
+        mPath = line_path;
     end
-
-    try
-        mPath{i} = path(idx,[2 1]);
-        mPath{i} = [opts.X_lim(1,mPath{i}(:,1))' opts.Y_lim(mPath{i}(:,2),1)]';
-    catch
-        keyboard
-    end
-    
     plot(path(:,2), path(:,1),'r','LineWidth',2,'LineStyle','-.')
 
     plot(start(2),start(1),'g.','MarkerSize',20)
     plot(goal(2),goal(1),'r.','MarkerSize',20)
+
+    hold off
+
+    mPath_cell = cell(n_agents,1);
+    for i = 1:n_agents
+        mPath_cell{i} = mPath + agent_params.formation_relative_positions(:,i);
+    end
+
+    initPath = cat(1,mPath_cell{:});
+    initPath(:,1) = cat(1,agents.start);
+    initPath(:,end) = cat(1,agents.goal);
+    fprintf('Generated initial path for %d agents in formation with %d waypoints\n', n_agents, size(initPath,2))
 end
-
-hold off
-
-initPath = cat(1,mPath{:});
-initPath(:,1) = cat(1,agents.position);
-initPath(:,end) = cat(1,agents.goal);
-fprintf('Generated initial path for %d agents with %d waypoints\n', n_agents, size(initPath,2))
 
 % figure
 % show(planner)
@@ -215,6 +268,5 @@ stateValidator.Map = occupancyMap;
 %}
 figure(20)
 close
-
 
 end

@@ -22,7 +22,7 @@ function planned_trajectories = costa_multi_agent_planner(agents, env_params, cu
     % --- Initial Guess --- 
     P0 = zeros(2*N_agents, T+1);
     for i = 1:N_agents
-        start_pos = agents(i).position;
+        start_pos = agents(i).start;
         goal_pos = agents(i).goal;
         % Linear interpolation (can be improved with fancier guess)
         interp_x = linspace(start_pos(1), goal_pos(1), T+1);
@@ -71,7 +71,7 @@ function planned_trajectories = costa_multi_agent_planner(agents, env_params, cu
     lbg = []; ubg = []; % Lower and upper bounds for constraints
 
     % 1. Initial Position Constraint
-    initial_pos_vec = reshape(cat(2, agents.position), 2*N_agents, 1);
+    initial_pos_vec = reshape(cat(2, agents.start), 2*N_agents, 1);
     g = {g{:}, P_sym(:, 1) - initial_pos_vec};
     lbg = [lbg; zeros(2*N_agents, 1)-eps]; % Equality constraint LBG=UBG=0
     ubg = [ubg; zeros(2*N_agents, 1)+eps];

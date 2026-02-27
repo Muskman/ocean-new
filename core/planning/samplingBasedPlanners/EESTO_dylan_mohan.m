@@ -5,7 +5,7 @@ function [EESTO_path, EESTO_energy,cost_EESTO,V_rel_i,V_abs_i] = EESTO_dylan_moh
                                       
 %% parameters   
 h = 10;
-weight = 0.001; 
+weight = 0*0.001; 
 decay_it = decay_fact;
 change_factor = .0005;
 
@@ -31,6 +31,10 @@ for i = 2:N-1
     T(i,i) = 1 / (((path(i-1,3) + path(i,3)) / 2) ^ 2);
     Tinv(i,i) = (((path(i-1,3) + path(i,3)) / 2) ^ 2);
 end
+
+obstacle_color = [0.73 0.57 0.32]; % Light gray for obstacles
+obstacle_edge_color = [0 0 0]; % Make edge black
+obstacle_line_width = 1.5;    % Make edge thicker
 
 %% Running EESTO
 
@@ -130,6 +134,10 @@ while (flag && m <= num_its)
         hold on;
         quiver(q_x_m(y_min:4:y_max,x_min:4:x_max),q_y_m(y_min:4:y_max,x_min:4:x_max),u(y_min:4:y_max,x_min:4:x_max),v(y_min:4:y_max,x_min:4:x_max),'LineWidth',1,'Color','k');
         plot(path(:,1),path(:,2),'r-x')
+        for i = 1:opts.n_obs
+            [x_vertices, y_vertices] = create_circle_vertices(opts.x_obs(:,i), opts.r_obs(i));
+            fill(x_vertices, y_vertices, obstacle_color, 'EdgeColor', obstacle_edge_color, 'LineWidth', obstacle_line_width);
+        end
         x = zeros(N,1);
         y = x;
         for i = 1:K
@@ -140,7 +148,7 @@ while (flag && m <= num_its)
             plot(x,y,'g-x')
         end
         plot(path(:,1),path(:,2),'w-x')
-        hold off
+        hold off        
         pause(0.001)
     end
     
@@ -212,6 +220,7 @@ while (flag && m <= num_its)
 
     new_path = path(:,:) + update_vector;
     new_path(:,3) = new_path(:,3)*(sum(path(:,3))/sum(new_path(:,3)));
+    old_path = path;
     path(:,:) = new_path;
     
     % Handling the two end cases

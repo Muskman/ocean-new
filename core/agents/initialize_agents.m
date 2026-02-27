@@ -64,14 +64,14 @@ function agents = initialize_agents(num_agents, agent_params, env_params, sim_pa
                  obs_collision_start = false;
                  if ~isempty(env_params.obstacles)
                      for i = 1:num_agents
-                         if any(vecnorm(potential_start_positions(:,i) - cat(2, env_params.obstacles.center)) < cat(2, env_params.obstacles.radius) + agent_radius * min_dist_obs_factor)
+                         if any(vecnorm(potential_start_positions(:,i) - cat(2, env_params.obstacles.center)) < cat(2, env_params.obstacles.radius) + agent_params.safety_margin + agent_radius * min_dist_obs_factor)
                              obs_collision_start = true; break;
                          end
                      end
                  end
                  % Check if any part of formation is out of bounds
-                 out_of_bounds_start = any(potential_start_positions(1,:) < env_params.x_limits(1) | potential_start_positions(1,:) > env_params.x_limits(2) | ...
-                                           potential_start_positions(2,:) < env_params.y_limits(1) | potential_start_positions(2,:) > env_params.y_limits(2));
+                 out_of_bounds_start = any(potential_start_positions(1,:) < env_params.x_limits(1) + agent_radius | potential_start_positions(1,:) > env_params.x_limits(2) - agent_radius | ...
+                                           potential_start_positions(2,:) < env_params.y_limits(1) + agent_radius | potential_start_positions(2,:) > env_params.y_limits(2) - agent_radius );
 
                  if ~obs_collision_start && ~out_of_bounds_start
                      valid_start_centroid = true;
@@ -122,6 +122,7 @@ function agents = initialize_agents(num_agents, agent_params, env_params, sim_pa
     for i = 1:num_agents
         agents(i).id = i;
         agents(i).position = positions(:, i);
+        agents(i).start = positions(:, i);
         agents(i).goal = goals(:, i);
         agents(i).control_velocity = [0; 0];
         agents(i).estimated_current = [0; 0];

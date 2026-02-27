@@ -6,7 +6,7 @@ function [STOMP_path, STOMP_energy,cost_STOMP,V_rel_i,V_abs_i] = STOMP_dylan_moh
  
 %% Initializing required parameters
 h = 10;                   
-weight = 0.001;           
+weight = 0*0.001;           
 decay_it = decay_fact;
 change_factor = .0005;
 

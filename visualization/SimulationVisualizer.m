@@ -39,6 +39,8 @@ classdef SimulationVisualizer < handle
         video_writer                % VideoWriter object
         video_enabled               % Flag for video export enabled
         video_file_path             % Full path to video file
+        run_timestamp               % Shared timestamp for grouping batch runs
+        run_date                    % Shared date for grouping batch runs
     end
     
     methods
@@ -58,7 +60,18 @@ classdef SimulationVisualizer < handle
             obj.video_enabled = video_params.enabled;
             obj.video_writer = [];
             obj.video_file_path = '';
+            % Use shared batch timestamp if provided, otherwise generate one now
+            if isfield(video_params, 'run_timestamp')
+                obj.run_timestamp = video_params.run_timestamp;
+            else
+                obj.run_timestamp = datestr(now, 'HH-MM-SS');
+            end
             
+            if isfield(video_params, 'run_date')
+                obj.run_date = video_params.run_date;
+            else
+                obj.run_date = datestr(now, 'yyyy-mm-dd');
+            end
             % Initialize handle arrays as empty
             obj.ax = [];
             obj.quiver_h = [];
@@ -334,6 +347,20 @@ classdef SimulationVisualizer < handle
                 end
             end
             
+            % Save final figure (svg for paper, .fig for re-editing)
+            if obj.video_params.save_figure
+                fig_path = obj.generateVideoFilePath();
+                fig_dir  = fileparts(fig_path);
+                if ~exist(fig_dir, 'dir'); mkdir(fig_dir); end
+                try
+                    savefig(obj.figure_handle, [fig_path, '.fig']);
+                    exportgraphics(obj.figure_handle, [fig_path, '.svg']);
+                    fprintf('Figure saved: %s\n', [fig_path, '.svg']);
+                catch ME
+                    warning('SimulationVisualizer:FigureSaveFailed', 'Could not save figure: %s', ME.message);
+                end
+            end
+
             % Finalize video capture
             obj.finalizeVideoCapture();
         end
@@ -415,6 +442,7 @@ classdef SimulationVisualizer < handle
                 obj.video_writer = [];
                 
                 fprintf('Video export completed: %s\n', obj.video_file_path);
+                close(obj.figure_handle);
                 
             catch ME
                 warning('SimulationVisualizer:VideoFinalizeFailed', 'Failed to finalize video capture: %s', ME.message);
@@ -425,7 +453,8 @@ classdef SimulationVisualizer < handle
             % Generate auto-generated folder structure and filename
             
             % Level 1: Date folder (YYYY-MM-DD)
-            date_folder = datestr(now, 'yyyy-mm-dd');
+            date_folder = obj.run_date; % datestr(now, 'yyyy-mm-dd');
+            time_folder = obj.run_timestamp; % datestr(now, 'HH-MM-SS');
             
             % Level 2: Configuration folder (formation_enabled/disabled + current type)
             if obj.sim_params.formation_enabled
@@ -434,6 +463,8 @@ classdef SimulationVisualizer < handle
                 formation_str = 'formation_disabled';
             end
             config_folder = sprintf('%s_%s', formation_str, obj.current_params.type);
+
+            agent_folder = sprintf('agents%d', obj.num_agents);
             
             % Level 3: Auto-generated filename with algorithm prefix
             % Format numbers compactly (no trailing zeros)
@@ -441,16 +472,16 @@ classdef SimulationVisualizer < handle
             T_final_str = obj.formatNumber(obj.sim_params.T_final);
             noise_str = obj.formatNumber(obj.current_params.noise_level);
             
-            filename = sprintf('%s_dt%s_T%s_ens%d_noise%s_agents%d', ...
+            filename = sprintf('%s_noise%s_ens%d_dt%s_T%s', ...
                 obj.sim_params.algo, ...
-                dt_str, ...
-                T_final_str, ...
-                obj.current_params.num_ensemble_members, ...
                 noise_str, ...
-                obj.num_agents);
+                obj.current_params.num_ensemble_members, ...
+                dt_str, ...
+                T_final_str);
             
             % Construct full path (without extension - will be added based on video profile)
-            file_path = fullfile('results', date_folder, config_folder, filename);
+            % Structure: results / YYYY-MM-DD / HH-MM-SS / config_folder / filename
+            file_path = fullfile('results', date_folder, time_folder, config_folder, agent_folder, filename);
         end
         
         function str = formatNumber(~, num)

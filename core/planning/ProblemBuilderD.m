@@ -33,9 +33,6 @@ classdef ProblemBuilderD < handle
         % Configuration
         config                              % What to include/exclude
         
-        % Safety margin
-        safety_margin
-        
         % Pre-allocation tracking indices (for constraint building)
         current_cell_idx
         current_bound_idx
@@ -108,9 +105,6 @@ classdef ProblemBuilderD < handle
             obj.dt = sim_params.dt;
             obj.ensemble_samples_sym = [];
             obj.ensemble_sample_idx = 0;
-            
-            % Safety margin (from original code)
-            obj.safety_margin = 0.2;
             
             % Initialize symbolic template system
             obj.P0_sym = [];
@@ -218,7 +212,7 @@ classdef ProblemBuilderD < handle
                 % Generate reference trajectory P0 using linear interpolation
                 obj.P0 = zeros(2*obj.N_agents, obj.T+1);
                 for i = 1:obj.N_agents
-                    start_pos = obj.agents(i).position;
+                    start_pos = obj.agents(i).start;
                     goal_pos = obj.agents(i).goal;
                     % Linear interpolation
                     interp_x = linspace(start_pos(1), goal_pos(1), obj.T+1);
@@ -540,7 +534,7 @@ classdef ProblemBuilderD < handle
             end
             
             % Formation constraints
-            if obj.config.enable_formation_constraints && obj.sim_params.formation_enabled && obj.N_agents > 1
+            if obj.sim_params.formation_enabled && obj.N_agents > 1
                 total_constraint_cells = total_constraint_cells + obj.T;  % 1 per timestep
                 total_bounds = total_bounds + obj.T * 2 * obj.N_agents;
             end
@@ -582,7 +576,7 @@ classdef ProblemBuilderD < handle
 
             % --- Initial Constraints ---
             if obj.config.enable_initial_constraints
-                initial_pos_vec = reshape(cat(2, obj.agents.position), 2*obj.N_agents, 1);
+                initial_pos_vec = reshape(cat(2, obj.agents.start), 2*obj.N_agents, 1);
                 obj.current_cell_idx = obj.current_cell_idx + 1;
                 obj.constraint_exprs{obj.current_cell_idx} = obj.P_sym(:, 1) - initial_pos_vec;
                 
@@ -614,7 +608,7 @@ classdef ProblemBuilderD < handle
             end
             
             % --- Formation Constraints ---
-            if obj.config.enable_formation_constraints && obj.sim_params.formation_enabled && obj.N_agents > 1
+            if obj.sim_params.formation_enabled && obj.N_agents > 1
                 obj.addFormationConstraintsUnified(bench);
             end
             
@@ -786,7 +780,7 @@ classdef ProblemBuilderD < handle
                     n_additional = n_additional + obj.T * (obj.N_agents - 1);
                 end
             end
-            if obj.config.enable_formation_constraints && obj.sim_params.formation_enabled && obj.N_agents > 1
+            if obj.sim_params.formation_enabled && obj.N_agents > 1
                 n_additional = n_additional + obj.T;
             end
             if obj.config.enable_obstacle_constraints && ~isempty(obj.env_params.obstacles)
@@ -810,7 +804,7 @@ classdef ProblemBuilderD < handle
 
             % --- Initial Constraints ---
             if obj.config.enable_initial_constraints
-                initial_pos_vec = reshape(cat(2, obj.agents.position), 2*obj.N_agents, 1);
+                initial_pos_vec = reshape(cat(2, obj.agents.start), 2*obj.N_agents, 1);
                 obj.current_training_idx = obj.current_training_idx + 1;
                 obj.current_testing_idx = obj.current_testing_idx + 1;
                 obj.constraints_training{obj.current_training_idx} = obj.P0(:, 1) - initial_pos_vec;
@@ -836,7 +830,7 @@ classdef ProblemBuilderD < handle
             end
             
             % --- Formation Constraints ---
-            if obj.config.enable_formation_constraints && obj.sim_params.formation_enabled && obj.N_agents > 1
+            if obj.sim_params.formation_enabled && obj.N_agents > 1
                 obj.addFormationConstraintsUnified(bench);
             end
             
@@ -886,7 +880,7 @@ classdef ProblemBuilderD < handle
         
         function addCollisionConstraintsUnified(obj, bench)
             % Add collision constraints and bounds in unified manner
-            min_dist_agent_sq = (2 * obj.agent_params.radius + obj.safety_margin)^2;
+            min_dist_agent_sq = (2 * obj.agent_params.radius + obj.agent_params.safety_margin)^2;
             
             switch obj.config.collision_method
                 case 'pairwise'
@@ -896,7 +890,7 @@ classdef ProblemBuilderD < handle
         
         function addAgentCollisionConstraintsUnified(obj, idx_agent, bench)
             % Add collision constraints and bounds in unified manner
-            min_dist_agent_sq = (2 * obj.agent_params.radius + obj.safety_margin)^2;
+            min_dist_agent_sq = (2 * obj.agent_params.radius + obj.agent_params.safety_margin)^2;
             
             switch obj.config.collision_method
                 case 'pairwise'
@@ -1014,7 +1008,11 @@ classdef ProblemBuilderD < handle
                     dev_sq = reshape(Relative_k - Target_relative, 2*obj.N_agents, 1);
                     
                     obj.current_cell_idx = obj.current_cell_idx + 1;
-                    obj.constraint_exprs{obj.current_cell_idx} = dev_sq;
+                    if obj.config.enable_formation_constraints
+                        obj.constraint_exprs{obj.current_cell_idx} = dev_sq;
+                    else
+                        obj.constraint_exprs{obj.current_cell_idx} = dev_sq*0; % dummy constraint
+                    end
 
                     % Track this index as a formation constraint
                     obj.formation_constraint_indices = [obj.formation_constraint_indices; obj.current_cell_idx];
@@ -1034,8 +1032,13 @@ classdef ProblemBuilderD < handle
                     
                     obj.current_training_idx = obj.current_training_idx + 1;
                     obj.current_testing_idx = obj.current_testing_idx + 1;
-                    obj.constraints_training{obj.current_training_idx} = dev_sq_P0;
-                    obj.constraints_testing{obj.current_testing_idx} = dev_sq_P0;
+                    if obj.config.enable_formation_constraints
+                        obj.constraints_training{obj.current_training_idx} = dev_sq_P0;
+                        obj.constraints_testing{obj.current_testing_idx} = dev_sq_P0;
+                    else
+                        obj.constraints_training{obj.current_training_idx} = 0*dev_sq_P0;
+                        obj.constraints_testing{obj.current_testing_idx} = 0*dev_sq_P0;
+                    end
                 end
 
                 constraint_count = constraint_count + 2*obj.N_agents;
@@ -1085,7 +1088,7 @@ classdef ProblemBuilderD < handle
             % Uses pre-allocated arrays with index tracking
             obs_centers_matrix = cat(2, obj.env_params.obstacles.center);
             obs_radii = cat(2, obj.env_params.obstacles.radius);
-            min_dist_sq_all_obs = (obj.agent_params.radius + obs_radii + obj.safety_margin).^2;
+            min_dist_sq_all_obs = (obj.agent_params.radius + obs_radii + obj.agent_params.safety_margin).^2;
             n_obs = length(obs_radii);
             constraint_count = 0;
 
@@ -1137,7 +1140,7 @@ classdef ProblemBuilderD < handle
             % Uses pre-allocated arrays with index tracking
             obs_centers_matrix = cat(2, obj.env_params.obstacles.center);
             obs_radii = cat(2, obj.env_params.obstacles.radius);
-            min_dist_sq_all_obs = (obj.agent_params.radius + obs_radii + obj.safety_margin).^2;
+            min_dist_sq_all_obs = (obj.agent_params.radius + obs_radii + obj.agent_params.safety_margin).^2;
             n_obs = length(obs_radii);
             constraint_count = 0;
 
@@ -1226,7 +1229,7 @@ classdef ProblemBuilderD < handle
             
             i_idx = repmat(idx_agent, obj.N_agents-1, 1);
             j_idx = setdiff(1:obj.N_agents, idx_agent)';
-            % min_dist_agent_sq = (2 * obj.agent_params.radius + obj.safety_margin)^2;
+            % min_dist_agent_sq = (2 * obj.agent_params.radius + obj.agent_params.safety_margin)^2;
             
             % Update each tracked collision constraint index
             constraint_idx = 1;  % Index within collision_constraint_indices
@@ -1415,7 +1418,7 @@ classdef ProblemBuilderD < handle
             config.enable_control_constraints = true;
             config.enable_obstacle_constraints = true;
             config.enable_collision_constraints = true;
-            config.enable_formation_constraints = true;
+            config.enable_formation_constraints = false;
             config.collision_method = 'pairwise'; % 'minimum_distance' or 'pairwise'
             config.use_linear_approximation = false;
             config.use_stochastic_sampling = false;

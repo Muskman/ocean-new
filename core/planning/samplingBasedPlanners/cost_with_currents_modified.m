@@ -6,7 +6,7 @@ function [cost] = cost_with_currents_modified(w1, w2, w3, u, v, v_max, siz,X_loc
 %function [cost] = cost_with_currents_expectation_test(w1, w2, w3, v_max, size)
     % Constants for calculations
     cost = 0;
-    L = 10;
+    L = 10000;
     factor = 1;
     c_d = 3;
     
@@ -49,12 +49,17 @@ function [cost] = cost_with_currents_modified(w1, w2, w3, u, v, v_max, siz,X_loc
     vel_ocean_temp2 = find_ocean_vel(x_2,y_2,u,v,X_loc,Y_loc, opts.current_params);
     vel_ocean_temp3 = find_ocean_vel(x_3,y_3,u,v,X_loc,Y_loc, opts.current_params);
 
-    if (isnan(u(x_index_1,y_index_1)) || isnan(u(x_index_2, y_index_2)) ||...
-        isnan(u(x_index_3, y_index_3)) || isnan(v(x_index_1, y_index_1)) ||...
-        isnan(v(x_index_2, y_index_2)) || isnan(v(x_index_3, y_index_3)))
+    % Check if any of the indices are out of bounds for u or v
+    buffer = 5;
+    if (x_index_1 < 1-buffer || x_index_1 > size(u,1)+buffer || ...
+       y_index_1 < 1-buffer || y_index_1 > size(u,2)+buffer || ...
+       x_index_2 < 1-buffer || x_index_2 > size(u,1)+buffer || ...
+       y_index_2 < 1-buffer || y_index_2 > size(u,2)+buffer || ...
+       x_index_3 < 1-buffer || x_index_3 > size(u,1)+buffer || ...
+       y_index_3 < 1-buffer || y_index_3 > size(u,2)+buffer)
         
-    % Should make this a function of how deep it is into the object
-        cost = O^2;
+        % Should make this a function of how deep it is into the object
+        cost = sqrt(O)*1e-4;
 
     elseif any(isnan(vel_ocean_temp1.*vel_ocean_temp2.*vel_ocean_temp3))
         cost = O^2;    
@@ -101,30 +106,30 @@ function [cost] = cost_with_currents_modified(w1, w2, w3, u, v, v_max, siz,X_loc
         % cost = cost + c_d * vel_req ^ 3 * t_1;
         
         % Energy cost with waypoint
-        cost_with = c_d * vel_req_12 ^ 3 * t_1 + c_d * vel_req_23 ^ 3 * t_2;
+        cost_with = vel_req_23^2 * t_2; % c_d * vel_req_12 ^ 3 * t_1 + c_d * vel_req_23 ^ 3 * t_2; % 
 
         % Energy cost without waypoint
-        cost_without = c_d * vel_req_13 ^ 3 * t_13;
+        cost_without = 0; %c_d * vel_req_13 ^ 3 * t_13;
     
         % Scaling the difference
         diff = cost_with - cost_without;
         
         if diff ~= 0
-            diff = diff / (10 ^ floor(log10(abs(diff))));
+            diff = log(diff); % / (10 ^ floor(log10(abs(diff))));
         end
         
         % Adding in energy cost
         cost = cost + exp(diff);
 
-        % try
-        %     for i = 1:opts.n_obs
-        %         if norm(opts.x_obs(:,i)'-w2(1:2)) < opts.r_obs(i)+opts.r_a
-        %             cost = cost + O;
-        %         end
-        %     end
-        % catch
-        %     keyboard
-        % end
+        try
+            for i = 1:opts.n_obs
+                if norm(opts.x_obs(:,i)'-w2(1:2)) < opts.r_obs(i)+opts.r_a
+                    cost = cost + O;
+                end
+            end
+        catch
+            keyboard
+        end
     end
 
     if isnan(cost)

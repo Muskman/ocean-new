@@ -8,7 +8,7 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
     config = ProblemBuilder.getDefaultConfig();
     % You can customize configuration here if needed
     config.use_linear_approximation = true;
-    config.enable_formation_constraints = true;
+    config.enable_formation_constraints = false;
     % config.enable_collision_constraints = false;
      
     builder = ProblemBuilder(agents, env_params, current_params, sim_params, agent_params, config);

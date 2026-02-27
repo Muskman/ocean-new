@@ -45,6 +45,8 @@ classdef ProblemBuilder < handle
     end
     
     properties (Access = public)
+        
+        init_time
         % Bounds on decision variables
         lbx, ubx
 
@@ -132,7 +134,9 @@ classdef ProblemBuilder < handle
             % Setup problem components
             obj.setupSymbolicVariables();
             obj.setupOceanFunctions();
+            tic_init = tic;
             obj.generateReferenceTrajectory();
+            obj.init_time = toc(tic_init);
 
             if any(strcmp(obj.sim_params.algo, 'ssca'))
                 obj.G = 0;
@@ -209,21 +213,24 @@ classdef ProblemBuilder < handle
         end
         
         function generateReferenceTrajectory(obj)
+            
             % Generate reference trajectory P0 using linear interpolation
-            if strcmp(obj.sim_params.initial_guess, 'straightline')
-                obj.P0 = zeros(2*obj.N_agents, obj.T+1);
-                for i = 1:obj.N_agents
-                    start_pos = obj.agents(i).position;
-                    goal_pos = obj.agents(i).goal;
-                    % Linear interpolation
-                    interp_x = linspace(start_pos(1), goal_pos(1), obj.T+1);
-                    interp_y = linspace(start_pos(2), goal_pos(2), obj.T+1);
-                    obj.P0(2*i-1, :) = interp_x;
-                    obj.P0(2*i, :) = interp_y;
-                end
-            elseif strcmp(obj.sim_params.initial_guess, 'aStar')
+            obj.P0 = zeros(2*obj.N_agents, obj.T+1);
+            for i = 1:obj.N_agents
+                start_pos = obj.agents(i).start;
+                goal_pos = obj.agents(i).goal;
+                % Linear interpolation
+                interp_x = linspace(start_pos(1), goal_pos(1), obj.T+1);
+                interp_y = linspace(start_pos(2), goal_pos(2), obj.T+1);
+                obj.P0(2*i-1, :) = interp_x;
+                obj.P0(2*i, :) = interp_y;
+            end
+
+            % use astar initial guess if specified
+            if strcmp(obj.sim_params.initial_guess, 'aStar')
                 [obj.P0, ~] = aStarInit(obj.agents, obj.env_params, obj.current_params, obj.sim_params, obj.agent_params);
             end
+            
             obj.P0_old = obj.P0;
             obj.z = zeros(2*obj.N_agents*(obj.T+1), 1);
         end
@@ -652,7 +659,7 @@ classdef ProblemBuilder < handle
             end
             
             % Formation constraints
-            if obj.config.enable_formation_constraints && obj.sim_params.formation_enabled && obj.N_agents > 1
+            if obj.sim_params.formation_enabled && obj.N_agents > 1
                 total_constraint_cells = total_constraint_cells + obj.T;  % 1 per timestep
                 total_bounds = total_bounds + obj.T * 2 * obj.N_agents;
             end
@@ -694,7 +701,7 @@ classdef ProblemBuilder < handle
 
             % --- Initial Constraints ---
             if obj.config.enable_initial_constraints
-                initial_pos_vec = reshape(cat(2, obj.agents.position), 2*obj.N_agents, 1);
+                initial_pos_vec = reshape(cat(2, obj.agents.start), 2*obj.N_agents, 1);
                 obj.current_cell_idx = obj.current_cell_idx + 1;
                 obj.constraint_exprs{obj.current_cell_idx} = obj.P_sym(:, 1) - initial_pos_vec;
                 
@@ -726,7 +733,7 @@ classdef ProblemBuilder < handle
             end
             
             % --- Formation Constraints ---
-            if obj.config.enable_formation_constraints && obj.sim_params.formation_enabled && obj.N_agents > 1
+            if obj.sim_params.formation_enabled && obj.N_agents > 1
                 obj.addFormationConstraintsUnified(bench);
             end
             
@@ -767,7 +774,7 @@ classdef ProblemBuilder < handle
                     n_additional = n_additional + obj.T * (obj.N_agents - 1);
                 end
             end
-            if obj.config.enable_formation_constraints && obj.sim_params.formation_enabled && obj.N_agents > 1
+            if obj.sim_params.formation_enabled && obj.N_agents > 1
                 n_additional = n_additional + obj.T;
             end
             if obj.config.enable_obstacle_constraints && ~isempty(obj.env_params.obstacles)
@@ -791,7 +798,7 @@ classdef ProblemBuilder < handle
 
             % --- Initial Constraints ---
             if obj.config.enable_initial_constraints
-                initial_pos_vec = reshape(cat(2, obj.agents.position), 2*obj.N_agents, 1);
+                initial_pos_vec = reshape(cat(2, obj.agents.start), 2*obj.N_agents, 1);
                 obj.current_training_idx = obj.current_training_idx + 1;
                 obj.current_testing_idx = obj.current_testing_idx + 1;
                 obj.constraints_training{obj.current_training_idx} = obj.P0(:, 1) - initial_pos_vec;
@@ -817,7 +824,7 @@ classdef ProblemBuilder < handle
             end
             
             % --- Formation Constraints ---
-            if obj.config.enable_formation_constraints && obj.sim_params.formation_enabled && obj.N_agents > 1
+            if obj.sim_params.formation_enabled && obj.N_agents > 1
                 obj.addFormationConstraintsUnified(bench);
             end
             
@@ -979,7 +986,12 @@ classdef ProblemBuilder < handle
                     dev_sq = reshape(Relative_k - Target_relative, 2*obj.N_agents, 1);
                     
                     obj.current_cell_idx = obj.current_cell_idx + 1;
-                    obj.constraint_exprs{obj.current_cell_idx} = dev_sq*0; % dummy constraint
+                    
+                    if obj.config.enable_formation_constraints
+                        obj.constraint_exprs{obj.current_cell_idx} = dev_sq;
+                    else
+                        obj.constraint_exprs{obj.current_cell_idx} = dev_sq*0; % dummy constraint
+                    end
 
                     % Track this index as a formation constraint
                     obj.formation_constraint_indices = [obj.formation_constraint_indices; obj.current_cell_idx];
@@ -998,8 +1010,13 @@ classdef ProblemBuilder < handle
                     obj.current_training_idx = obj.current_training_idx + 1;
                     obj.current_testing_idx = obj.current_testing_idx + 1;
                     obj.formation_constraint_violations = [obj.formation_constraint_violations; dev_sq_P0];
-                    obj.constraints_training{obj.current_training_idx} = dev_sq_P0;
-                    obj.constraints_testing{obj.current_testing_idx} = dev_sq_P0;
+                    if obj.config.enable_formation_constraints
+                        obj.constraints_training{obj.current_training_idx} = dev_sq_P0;
+                        obj.constraints_testing{obj.current_testing_idx} = dev_sq_P0;
+                    else
+                        obj.constraints_training{obj.current_training_idx} = 0*dev_sq_P0;
+                        obj.constraints_testing{obj.current_testing_idx} = 0*dev_sq_P0;
+                    end
                 end
 
                 constraint_count = constraint_count + 2*obj.N_agents;
@@ -1207,7 +1224,6 @@ classdef ProblemBuilder < handle
                 end
             end
             metrics.training_constraint_violations = violations_lower + violations_upper;    
-
             % formation constraint violations
             % violation_norm = norm(full(obj.constraints_training(obj.formation_constraint_indices)));
             % metrics.formation_constraint_violations = violation_norm;
@@ -1298,7 +1314,7 @@ classdef ProblemBuilder < handle
             config.enable_control_constraints = true;
             config.enable_obstacle_constraints = true;
             config.enable_collision_constraints = true;
-            config.enable_formation_constraints = true;
+            config.enable_formation_constraints = false;
             config.collision_method = 'pairwise'; % 'minimum_distance' or 'pairwise'
             config.use_linear_approximation = false;
             config.use_stochastic_sampling = false;

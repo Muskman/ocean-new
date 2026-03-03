@@ -6,7 +6,7 @@ function agents = initialize_agents(num_agents, agent_params, env_params, sim_pa
                     'radius', {}, 'current_plan', {}, 'plan_start_step', {});
 
     agent_radius = agent_params.radius;
-    min_dist_obs_factor = 1.5; % Multiplier for radius to keep away from obstacle center
+    min_dist_obs_factor = 2; % Multiplier for radius to keep away from obstacle center
     min_dist_agent = 2.5 * agent_radius; % Min distance between agents centers
     boundary_margin = 2.5 * agent_radius; % Margin from environment edges
 
@@ -64,7 +64,7 @@ function agents = initialize_agents(num_agents, agent_params, env_params, sim_pa
                  obs_collision_start = false;
                  if ~isempty(env_params.obstacles)
                      for i = 1:num_agents
-                         if any(vecnorm(potential_start_positions(:,i) - cat(2, env_params.obstacles.center)) < cat(2, env_params.obstacles.radius) + agent_params.safety_margin + agent_radius * min_dist_obs_factor)
+                         if any(vecnorm(potential_start_positions(:,i) - cat(2, env_params.obstacles.center)) < cat(2, env_params.obstacles.radius) + agent_params.safety_margin + jjjjj * min_dist_obs_factor)
                              obs_collision_start = true; break;
                          end
                      end
@@ -90,14 +90,14 @@ function agents = initialize_agents(num_agents, agent_params, env_params, sim_pa
                  obs_collision_goal = false;
                  if ~isempty(env_params.obstacles)
                      for i = 1:num_agents
-                         if any(vecnorm(potential_goal_positions(:,i) - cat(2, env_params.obstacles.center)) < cat(2, env_params.obstacles.radius) + agent_radius) % Goal edge outside obs
+                         if any(vecnorm(potential_goal_positions(:,i) - cat(2, env_params.obstacles.center)) < cat(2, env_params.obstacles.radius) + agent_radius * min_dist_obs_factor) % Goal edge outside obs
                              obs_collision_goal = true; break;
                          end
                      end
                  end
                  % Check if any part of formation is out of bounds
-                 out_of_bounds_goal = any(potential_goal_positions(1,:) < env_params.x_limits(1) | potential_goal_positions(1,:) > env_params.x_limits(2) | ...
-                                          potential_goal_positions(2,:) < env_params.y_limits(1) | potential_goal_positions(2,:) > env_params.y_limits(2));
+                 out_of_bounds_goal = any(potential_goal_positions(1,:) < env_params.x_limits(1) + agent_radius | potential_goal_positions(1,:) > env_params.x_limits(2) - agent_radius | ...
+                                          potential_goal_positions(2,:) < env_params.y_limits(1) + agent_radius | potential_goal_positions(2,:) > env_params.y_limits(2) - agent_radius);
 
 
                  % Ensure goal centroid is far enough from start centroid

@@ -127,6 +127,7 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
                 for i = 1:length(agents)
                     planned_trajectories{i} = struct('planned_positions', []);
                 end
+                metrics.optimization_status = stats.return_status;
             end
             
         catch ME
@@ -135,6 +136,7 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
             for i = 1:length(agents)
                 planned_trajectories{i} = struct('planned_positions', []);
             end
+            metrics.inner_error_message = ME.message;
         end
     end
     

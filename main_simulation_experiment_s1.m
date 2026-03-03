@@ -13,10 +13,10 @@
 clear; clc; close all;
 
 % --- Sweep definitions ---
-agent_sweep          = [4,6,8];       % [2, 4, 6, 8, 10]
-noise_sweep          = 0.2; % [0.1, 0.2, 0.3, 0.4, 0.5]
-num_ensemble_members = 100;           % fixed for this experiment
-formation_enabled    = false;         % true or false
+agent_sweep          = [2,4,6,8,10];         % [2, 4, 6, 8, 10]
+noise_sweep          = 0.2;
+num_ensemble_members = 50;              % fixed for this experiment
+formation_enabled    = false;           % true or false
 
 % Single timestamp shared across the whole batch
 run_timestamp = datestr(now, 'HH-MM-SS');
@@ -49,10 +49,10 @@ for ai = 1:length(agent_sweep)
 
         % Enable video and inject shared timestamp so all files land in the
         % same date/time folder on disk
-        video_params.enabled       = true;
-        video_params.save_figure = true;
-        video_params.run_date = run_date;
-        video_params.run_timestamp = run_timestamp;
+        video_params.enabled        = true;
+        video_params.save_figure    = true;
+        video_params.run_date       = run_date;
+        video_params.run_timestamp   = run_timestamp;
         
         % Run simulation and collect metrics
         results_table{ai, ni} = run_simulation_case( ...
@@ -64,9 +64,10 @@ end
 out_dir = fullfile('results', run_date, run_timestamp);
 if ~exist(out_dir, 'dir'); mkdir(out_dir); end
 
+algorithms = sim_params.algo;
 save_path = fullfile(out_dir, 'batch_results.mat');
 save(save_path, 'results_table', 'agent_sweep', 'noise_sweep', ...
-     'num_ensemble_members', 'run_timestamp', 'run_date');
+     'num_ensemble_members', 'run_timestamp', 'run_date', 'formation_enabled', 'algorithms');
 
 fprintf('\n%s\n', repmat('=', 1, 70));
 fprintf('All %d cases complete.\n', length(agent_sweep) * length(noise_sweep));

@@ -51,7 +51,7 @@ function [sim_params, env_params, current_params, agent_params, video_params] = 
         env_params.obstacles(3) = struct('center', [-25; -25], 'radius', 10);
     else
         % Generate a specified number of random obstacles within the environment bounds
-        num_obstacles = 0; % You can change this number as desired
+        num_obstacles = 3; % You can change this number as desired
         env_params.obstacles = generate_random_obstacles(num_obstacles, env_params.x_limits, env_params.y_limits);
     end
 
@@ -74,7 +74,7 @@ function [sim_params, env_params, current_params, agent_params, video_params] = 
     % --- Agent Parameters ---
     agent_params.num_agents = num_agents;
     agent_params.radius = 1.5; 
-    agent_params.max_speed = 2;
+    agent_params.max_speed = 5;
     agent_params.safety_margin = 0.1;
     agent_params.collision_weight = 0*1e2;
     agent_params.color = lines(num_agents); % Assign distinct colors

@@ -14,8 +14,8 @@ clear; clc; close all;
 
 % --- Sweep definitions ---
 agent_sweep          = [3,4,5,6];       % [2, 4, 6, 8, 10]
-noise_sweep          = 0.2; % [0.1, 0.2, 0.3, 0.4, 0.5]
-num_ensemble_members = 100;           % fixed for this experiment
+noise_sweep          = [0.2, 0.4];
+num_ensemble_members = 50;           % fixed for this experiment
 formation_enabled    = true;
 
 % Single timestamp shared across the whole batch
@@ -64,9 +64,10 @@ end
 out_dir = fullfile('results', run_date, run_timestamp);
 if ~exist(out_dir, 'dir'); mkdir(out_dir); end
 
+algorithms = sim_params.algo;
 save_path = fullfile(out_dir, 'batch_results.mat');
 save(save_path, 'results_table', 'agent_sweep', 'noise_sweep', ...
-     'num_ensemble_members', 'run_timestamp', 'run_date');
+     'num_ensemble_members', 'run_timestamp', 'run_date', 'formation_enabled', 'algorithms');
 
 fprintf('\n%s\n', repmat('=', 1, 70));
 fprintf('All %d cases complete.\n', length(agent_sweep) * length(noise_sweep));

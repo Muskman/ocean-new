@@ -11,9 +11,9 @@ function all_metrics = run_simulation_case(sim_params, env_params, current_param
     % Output:
     %   all_metrics    - Struct with per-algorithm metrics plus case metadata
 
-    num_agents = agent_params.num_agents;
+    random_seed = randi(1000);
 
-    % --- Handle Multiple Algorithms ---
+    num_agents = agent_params.num_agents;
     algorithms_to_run = sim_params.algo;
     
     % Store results — include case metadata so the batch script has full context
@@ -21,12 +21,12 @@ function all_metrics = run_simulation_case(sim_params, env_params, current_param
     all_metrics.num_agents             = num_agents;
     all_metrics.num_ensemble_members   = current_params.num_ensemble_members;
     all_metrics.noise_level            = current_params.noise_level;
-
+    all_metrics.random_seed            = random_seed;
+    
     all_final_agents    = cell(length(algorithms_to_run), 1);
     all_state_histories = cell(length(algorithms_to_run), 1);
 
     fprintf('Running comparison for %d algorithm(s): %s\n', length(algorithms_to_run), strjoin(algorithms_to_run, ', '));
-    random_seed = randi(1000);
 
     % --- Run Simulation for Each Algorithm ---
     for algo_idx = 1:length(algorithms_to_run)
@@ -147,7 +147,6 @@ function all_metrics = run_simulation_case(sim_params, env_params, current_param
         catch ME
             warning('run_simulation_case:AlgorithmFailed', ...
                 'Algorithm %s failed: %s', current_algo, ME.message);
-            metrics               = struct();
             metrics.success       = false;
             metrics.error_message = ME.message;
         end

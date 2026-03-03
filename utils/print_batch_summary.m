@@ -55,9 +55,9 @@ function print_batch_summary(results_table, agent_sweep, noise_sweep, algorithms
     end
 
     % --- Print ---
-    col_w      = 22;
-    label_w    = 32;
-    total_width = label_w + 2 + col_w * n_algos + n_algos + 1;
+    col_w      = 10; % 
+    label_w    = 28; % 34
+    total_width = label_w + 4 + (col_w + 3) * (n_algos) ;
 
     banner = 'BATCH SUMMARY METRICS';
     fprintf('\n%s\n', repmat('=', 1, total_width));

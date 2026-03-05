@@ -17,7 +17,7 @@ agent_sweep          = 2; %[2,4,6,8,10];         % [2, 4, 6, 8, 10]
 noise_sweep          = 0.5;
 num_ensemble_members = 2;              
 formation_enabled    = false;           % true or false
-algorithms = {'astar', 'fullOpt', 'dssca'};
+algorithms           = {'astar','fullOpt','dssca'};
 num_mc_simulations   = 2;
 
 % Single timestamp shared across the whole batch
@@ -77,4 +77,4 @@ fprintf('Results saved to: %s\n', save_path);
 fprintf('%s\n', repmat('=', 1, 70));
 
 % --- Print aggregate summary across all cases ---
-% print_batch_summary(results_table, agent_sweep, noise_sweep, sim_params.algo);
+% print_batch_summary(results_table, agent_sweep, noise_sweep, algorithms);

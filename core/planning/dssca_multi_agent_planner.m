@@ -12,6 +12,9 @@ function [planned_trajectories, metrics] = dssca_multi_agent_planner(agents, env
     % config.enable_collision_constraints = false;
      
     builder = ProblemBuilderD(agents, env_params, current_params, sim_params, agent_params, config);
+
+    % set pre computed random seed for each monte carlo simulation
+    rng(sim_params.mc_random_seed, "philox");
     
     % --- Solver Options ---
     opts = struct;

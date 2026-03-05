@@ -17,6 +17,8 @@ agent_sweep          = [3,4,5,6];       % [2, 4, 6, 8, 10]
 noise_sweep          = 0.2;
 num_ensemble_members = 50;           % fixed for this experiment
 formation_enabled    = true;
+algorithms           = {'astar', 'fullOpt', 'ssca', 'dssca'};
+num_mc_simulations   = 1;
 
 % Single timestamp shared across the whole batch
 run_timestamp = datestr(now, 'HH-MM-SS');
@@ -45,7 +47,7 @@ for ai = 1:length(agent_sweep)
 
         % Load config for this case
         [sim_params, env_params, current_params, agent_params, video_params] = ...
-            simulation_config(n_agents, num_ensemble_members, noise_level, formation_enabled);
+            simulation_config(n_agents, num_ensemble_members, noise_level, formation_enabled, algorithms);
 
         % Enable video and inject shared timestamp so all files land in the
         % same date/time folder on disk
@@ -75,4 +77,4 @@ fprintf('Results saved to: %s\n', save_path);
 fprintf('%s\n', repmat('=', 1, 70));
 
 % --- Print aggregate summary across all cases ---
-print_batch_summary(results_table, agent_sweep, noise_sweep, sim_params.algo);
+% print_batch_summary(results_table, agent_sweep, noise_sweep, algorithms);

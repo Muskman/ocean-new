@@ -13,6 +13,9 @@ function [planned_trajectories, metrics] = sca_multi_agent_planner(agents, env_p
      
     builder = ProblemBuilder(agents, env_params, current_params, sim_params, agent_params, config);
     
+    % set pre computed random seed for each monte carlo simulation
+    rng(sim_params.mc_random_seed, "philox");
+    
     % --- Solver Options ---
     opts = struct;
     opts.ipopt.print_level = 0;     % 0=quiet, 3=default, 5=verbose

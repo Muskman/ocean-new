@@ -56,8 +56,6 @@ function [ocean_func, ocean_gradient_func] = create_symbolic_ocean_func(current_
                 x0_end = vortex_end.center(1);
                 y0_end = vortex_end.center(2);
                 Gamma_end = vortex_end.strength;
-                R_vortex_end = vortex_end.core_radius;
-
                 
                 x0 = x0_base + (x0_end - x0_base) * t/current_params.T_final;
                 y0 = y0_base + (y0_end - y0_base) * t/current_params.T_final;

@@ -1,4 +1,4 @@
-function [sim_params, env_params, current_params, agent_params, video_params] = simulation_config(num_agents, num_ensemble_members, noise_level, formation_enabled)
+function [sim_params, env_params, current_params, agent_params, video_params] = simulation_config(num_agents, num_ensemble_members, noise_level, formation_enabled, algorithms, num_mc_simulations)
     % SIMULATION_CONFIG Returns all simulation configuration parameters
     %
     % This function replaces the hardcoded parameter definitions in main_simulation.m
@@ -25,10 +25,11 @@ function [sim_params, env_params, current_params, agent_params, video_params] = 
     sim_params.replan_interval = sim_params.T_final/sim_params.dt;        % Replan interval 
     
     % --- algorithm related parameters ---
-    sim_params.algo = {'astar', 'fullOpt', 'ssca', 'dssca','stomp','eesto'}; % {'fullOpt','ssca','dssca'};               % Planning algorithm: 'fullOpt', 'sca', 'ssca'
+    sim_params.algo = algorithms; % Planning algorithm: 'fullOpt', 'sca', 'ssca'
+    sim_params.num_mc_simulations = num_mc_simulations;
     sim_params.initial_guess = 'aStar'; % 'straightline' or 'aStar'
     if any([strcmp(sim_params.algo, 'ssca'), strcmp(sim_params.algo, 'dssca')]) 
-        sim_params.max_outer_iterations = 50;
+        sim_params.max_outer_iterations = 5;
         sim_params.mu = 1e-6;
         sim_params.k_bar = 1;
         sim_params.w = 1;

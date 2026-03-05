@@ -54,6 +54,9 @@ function [planned_trajectories, metrics] = eesto_planner(agents, env_params, cur
     builder = ProblemBuilder(agents, env_params, current_params, sim_params, agent_params, ProblemBuilder.getDefaultConfig());
     P0_final = builder.P0;
 
+    % set pre computed random seed for each monte carlo simulation
+    rng(sim_params.mc_random_seed, "philox");
+
     planned_trajectories = cell(length(agents), 1);
     training_time = 0;
     

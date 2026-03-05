@@ -25,7 +25,7 @@ function [sim_params, env_params, current_params, agent_params, video_params] = 
     sim_params.replan_interval = sim_params.T_final/sim_params.dt;        % Replan interval 
     
     % --- algorithm related parameters ---
-    sim_params.algo = {'astar', 'fullOpt', 'ssca', 'dssca', 'stomp', 'eesto'}; % {'fullOpt','ssca','dssca'};               % Planning algorithm: 'fullOpt', 'sca', 'ssca'
+    sim_params.algo = {'astar', 'fullOpt', 'ssca', 'dssca','stomp','eesto'}; % {'fullOpt','ssca','dssca'};               % Planning algorithm: 'fullOpt', 'sca', 'ssca'
     sim_params.initial_guess = 'aStar'; % 'straightline' or 'aStar'
     if any([strcmp(sim_params.algo, 'ssca'), strcmp(sim_params.algo, 'dssca')]) 
         sim_params.max_outer_iterations = 50;

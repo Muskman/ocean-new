@@ -64,7 +64,7 @@ function agents = initialize_agents(num_agents, agent_params, env_params, sim_pa
                  obs_collision_start = false;
                  if ~isempty(env_params.obstacles)
                      for i = 1:num_agents
-                         if any(vecnorm(potential_start_positions(:,i) - cat(2, env_params.obstacles.center)) < cat(2, env_params.obstacles.radius) + agent_params.safety_margin + jjjjj * min_dist_obs_factor)
+                         if any(vecnorm(potential_start_positions(:,i) - cat(2, env_params.obstacles.center)) < cat(2, env_params.obstacles.radius) + agent_params.safety_margin + agent_radius * min_dist_obs_factor)
                              obs_collision_start = true; break;
                          end
                      end

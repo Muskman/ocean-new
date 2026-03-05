@@ -22,7 +22,7 @@ function all_metrics = run_simulation_case(sim_params, env_params, current_param
     all_metrics.num_ensemble_members   = current_params.num_ensemble_members;
     all_metrics.noise_level            = current_params.noise_level;
     all_metrics.random_seed            = random_seed;
-    
+
     all_final_agents    = cell(length(algorithms_to_run), 1);
     all_state_histories = cell(length(algorithms_to_run), 1);
 

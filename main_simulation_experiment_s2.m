@@ -14,7 +14,7 @@ clear; clc; close all;
 
 % --- Sweep definitions ---
 agent_sweep          = [3,4,5,6];       % [2, 4, 6, 8, 10]
-noise_sweep          = [0.2, 0.4];
+noise_sweep          = 0.2;
 num_ensemble_members = 50;           % fixed for this experiment
 formation_enabled    = true;
 

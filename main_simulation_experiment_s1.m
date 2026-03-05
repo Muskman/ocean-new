@@ -13,9 +13,9 @@
 clear; clc; close all;
 
 % --- Sweep definitions ---
-agent_sweep          = [2,4,6,8,10];         % [2, 4, 6, 8, 10]
-noise_sweep          = 0.2;
-num_ensemble_members = 50;              % fixed for this experiment
+agent_sweep          = 4; %[2,4,6,8,10];         % [2, 4, 6, 8, 10]
+noise_sweep          = [0.1, 0.25, 0.5];
+num_ensemble_members = 50;              
 formation_enabled    = false;           % true or false
 
 % Single timestamp shared across the whole batch

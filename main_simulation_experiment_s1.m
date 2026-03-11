@@ -13,12 +13,12 @@
 clear; clc; close all;
 
 % --- Sweep definitions ---
-agent_sweep          = 2; %[2,4,6,8,10];         % [2, 4, 6, 8, 10]
-noise_sweep          = 0.5;
-num_ensemble_members = 2;              
+agent_sweep          = 4;         % [2, 4, 6, 8, 10]
+noise_sweep          = [0.1, 0.25, 0.5];
+num_ensemble_members = 50;              
 formation_enabled    = false;           % true or false
-algorithms           = {'astar','fullOpt','dssca'};
-num_mc_simulations   = 2;
+algorithms           = {'astar', 'fullOpt', 'ssca', 'dssca', 'stomp', 'eesto'};
+num_mc_simulations   = 5;
 
 % Single timestamp shared across the whole batch
 run_timestamp = datestr(now, 'HH-MM-SS');
@@ -34,6 +34,7 @@ results_table = cell(length(agent_sweep), length(noise_sweep));
 
 % --- Outer batch loop ---
 for ai = 1:length(agent_sweep)
+    random_seed = 36;
     for ni = 1:length(noise_sweep)
         n_agents    = agent_sweep(ai);
         noise_level = noise_sweep(ni);
@@ -47,14 +48,14 @@ for ai = 1:length(agent_sweep)
 
         % Load config for this case
         [sim_params, env_params, current_params, agent_params, video_params] = ...
-            simulation_config(n_agents, num_ensemble_members, noise_level, formation_enabled, algorithms, num_mc_simulations);
+            simulation_config(n_agents, num_ensemble_members, noise_level, formation_enabled, algorithms, num_mc_simulations, random_seed);
 
         % Enable video and inject shared timestamp so all files land in the
         % same date/time folder on disk
         video_params.enabled        = true;
         video_params.save_figure    = true;
         video_params.run_date       = run_date;
-        video_params.run_timestamp   = run_timestamp;
+        video_params.run_timestamp  = run_timestamp;
         
         % Run simulation and collect metrics
         results_table{ai, ni} = run_simulation_case( ...

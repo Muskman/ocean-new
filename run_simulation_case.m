@@ -11,7 +11,7 @@ function all_metrics = run_simulation_case(sim_params, env_params, current_param
     % Output:
     %   all_metrics    - Struct with per-algorithm metrics plus case metadata
 
-    random_seed = randi(1000);
+    % random_seed = 274; % randi(1000);
 
     num_agents = agent_params.num_agents;
     algorithms_to_run = sim_params.algo;
@@ -21,8 +21,8 @@ function all_metrics = run_simulation_case(sim_params, env_params, current_param
     all_metrics.num_agents             = num_agents;
     all_metrics.num_ensemble_members   = current_params.num_ensemble_members;
     all_metrics.noise_level            = current_params.noise_level;
-    all_metrics.random_seed            = random_seed;
-    all_metrics.mc_random_seed = randi(1000,sim_params.num_mc_simulations,1);
+    all_metrics.random_seed            = sim_params.random_seed;
+    all_metrics.mc_random_seed         = randi(1000,sim_params.num_mc_simulations,1);
 
     all_final_agents    = cell(length(algorithms_to_run), 1);
     all_state_histories = cell(length(algorithms_to_run), 1);
@@ -52,9 +52,10 @@ function all_metrics = run_simulation_case(sim_params, env_params, current_param
             local_sim_params.algo = current_algo;
 
             % Environment seed (fixed across MC runs)
-            rng(random_seed, "philox");
+            rng(sim_params.random_seed, "philox");
 
             % Algorithm Monte Carlo seed (varies across MC runs for stochastic algos)
+            local_sim_params.random_seed = sim_params.random_seed;
             local_sim_params.mc_random_seed = all_metrics.mc_random_seed(j);
 
             % Only save visualization/video on the last MC run

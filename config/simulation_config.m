@@ -1,4 +1,4 @@
-function [sim_params, env_params, current_params, agent_params, video_params] = simulation_config(num_agents, num_ensemble_members, noise_level, formation_enabled, algorithms, num_mc_simulations)
+function [sim_params, env_params, current_params, agent_params, video_params] = simulation_config(num_agents, num_ensemble_members, noise_level, formation_enabled, algorithms, num_mc_simulations, random_seed)
     % SIMULATION_CONFIG Returns all simulation configuration parameters
     %
     % This function replaces the hardcoded parameter definitions in main_simulation.m
@@ -18,18 +18,19 @@ function [sim_params, env_params, current_params, agent_params, video_params] = 
     sim_params.T_final = 200;                 % Total simulation time (s)
     sim_params.time_steps = floor(sim_params.T_final / sim_params.dt);
     sim_params.visualization = true;         % Enable/disable visualization
-    sim_params.vis_interval = 5;             % Update visualization every N steps
+    sim_params.vis_interval = 2;             % Update visualization every N steps
     sim_params.vis_vector_scale = 1;         % Scaling factor for velocity vector visualization
     sim_params.formation_enabled = formation_enabled;     % toggle formation control
     sim_params.planning_horizon = sim_params.T_final/sim_params.dt;       % Number of steps planner looks ahead
     sim_params.replan_interval = sim_params.T_final/sim_params.dt;        % Replan interval 
-    
+    sim_params.random_seed = random_seed;
+
     % --- algorithm related parameters ---
     sim_params.algo = algorithms; % Planning algorithm: 'fullOpt', 'sca', 'ssca'
     sim_params.num_mc_simulations = num_mc_simulations;
     sim_params.initial_guess = 'aStar'; % 'straightline' or 'aStar'
     if any([strcmp(sim_params.algo, 'ssca'), strcmp(sim_params.algo, 'dssca')]) 
-        sim_params.max_outer_iterations = 5;
+        sim_params.max_outer_iterations = 50;
         sim_params.mu = 1e-6;
         sim_params.k_bar = 1;
         sim_params.w = 1;
@@ -53,7 +54,7 @@ function [sim_params, env_params, current_params, agent_params, video_params] = 
     else
         % Generate a specified number of random obstacles within the environment bounds
         num_obstacles = 3; % You can change this number as desired
-        env_params.obstacles = generate_random_obstacles(num_obstacles, env_params.x_limits, env_params.y_limits);
+        env_params.obstacles = generate_random_obstacles(num_obstacles, env_params.x_limits, env_params.y_limits, random_seed);
     end
 
     % --- Ocean Current Parameters ---
@@ -81,7 +82,7 @@ function [sim_params, env_params, current_params, agent_params, video_params] = 
     agent_params.color = lines(num_agents); % Assign distinct colors
 
     % --- Formation Parameters ---
-    agent_params.formation_inter_agent_distance = 15.0;
+    agent_params.formation_inter_agent_distance = 20.0;
     agent_params.formation_tolerance = 1e-6;
     agent_params.formation_weight = 0.5*1e-2;
     radius = agent_params.formation_inter_agent_distance / 2;
@@ -104,9 +105,11 @@ end
 
 
 % ---- Helper function to generate random obstacles within environment ----
-function obstacles = generate_random_obstacles(num, xlim, ylim)
+function obstacles = generate_random_obstacles(num, xlim, ylim, random_seed)
     min_radius = 5;  % Minimum possible obstacle radius
     max_radius = 10; % Maximum possible obstacle radius
+
+    rng(random_seed, "philox");
 
     obstacles = struct('center', {}, 'radius', {});
     for k = 1:num

@@ -30,7 +30,7 @@ function [sim_params, env_params, current_params, agent_params, video_params] = 
     sim_params.num_mc_simulations = num_mc_simulations;
     sim_params.initial_guess = 'aStar'; % 'straightline' or 'aStar'
     if any([strcmp(sim_params.algo, 'ssca'), strcmp(sim_params.algo, 'dssca')]) 
-        sim_params.max_outer_iterations = 50;
+        sim_params.max_outer_iterations = num_ensemble_members;
         sim_params.mu = 1e-6;
         sim_params.k_bar = 1;
         sim_params.w = 1;

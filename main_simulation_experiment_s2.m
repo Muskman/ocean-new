@@ -17,9 +17,9 @@ recreate_experiment_results = false;
 random_seed_all = [74, 176, 623, 359];
 
 % --- Sweep definitions ---
-agent_sweep          = 7;       % [2, 4, 6, 8, 10]
-noise_sweep          = 0.2;
-num_ensemble_members = 50;           % fixed for this experiment
+agent_sweep          = 3;       % [3]
+noise_level          = 0.25;
+num_ensemble_members_sweep = [25, 50, 100, 200];           % fixed for this experiment
 formation_enabled    = true;
 algorithms           = {'astar', 'fullOpt', 'ssca', 'dssca'};
 num_mc_simulations   = 5;
@@ -29,12 +29,12 @@ run_timestamp = datestr(now, 'HH-MM-SS');
 run_date      = datestr(now, 'yyyy-mm-dd');
 
 fprintf('Batch experiment started: %s %s\n', run_date, run_timestamp);
-fprintf('Sweeping %d agent counts x %d noise levels = %d total cases\n\n', ...
-    length(agent_sweep), length(noise_sweep), ...
-    length(agent_sweep) * length(noise_sweep));
+fprintf('Sweeping %d agent counts x %d ensemble member levels = %d total cases\n\n', ...
+    length(agent_sweep), length(num_ensemble_members_sweep), ...
+    length(agent_sweep) * length(num_ensemble_members_sweep));
 
 % results_table{ai, ni} holds all_metrics for that (num_agents, noise_level) case
-results_table = cell(length(agent_sweep), length(noise_sweep));
+results_table = cell(length(agent_sweep), length(num_ensemble_members_sweep));
 
 % --- Outer batch loop ---
 for ai = 1:length(agent_sweep)
@@ -44,15 +44,15 @@ for ai = 1:length(agent_sweep)
         random_seed = randi(1000);
     end
 
-    for ni = 1:length(noise_sweep)
+    for ni = 1:length(num_ensemble_members_sweep)
         n_agents    = agent_sweep(ai);
-        noise_level = noise_sweep(ni);
+        num_ensemble_members = num_ensemble_members_sweep(ni);
 
         fprintf('\n%s\n', repmat('#', 1, 70));
-        fprintf('CASE [%d/%d]: num_agents = %d  |  noise_level = %.2f\n', ...
-            (ai-1)*length(noise_sweep) + ni, ...
-            length(agent_sweep)*length(noise_sweep), ...
-            n_agents, noise_level);
+        fprintf('CASE [%d/%d]: num_agents = %d  |  num_ensemble_members = %d\n', ...
+            (ai-1)*length(num_ensemble_members_sweep) + ni, ...
+            length(agent_sweep)*length(num_ensemble_members_sweep), ...
+            n_agents, num_ensemble_members);
         fprintf('%s\n', repmat('#', 1, 70));
 
         % Load config for this case
@@ -78,11 +78,11 @@ if ~exist(out_dir, 'dir'); mkdir(out_dir); end
 
 algorithms = sim_params.algo;
 save_path = fullfile(out_dir, 'batch_results.mat');
-save(save_path, 'results_table', 'agent_sweep', 'noise_sweep', ...
-     'num_ensemble_members', 'run_timestamp', 'run_date', 'formation_enabled', 'algorithms');
+save(save_path, 'results_table', 'agent_sweep', 'noise_level', ...
+     'num_ensemble_members_sweep', 'run_timestamp', 'run_date', 'formation_enabled', 'algorithms');
 
 fprintf('\n%s\n', repmat('=', 1, 70));
-fprintf('All %d cases complete.\n', length(agent_sweep) * length(noise_sweep));
+fprintf('All %d cases complete.\n', length(agent_sweep) * length(num_ensemble_members_sweep));
 fprintf('Results saved to: %s\n', save_path);
 fprintf('%s\n', repmat('=', 1, 70));
 

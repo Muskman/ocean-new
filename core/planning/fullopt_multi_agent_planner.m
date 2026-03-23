@@ -16,8 +16,8 @@ function [planned_trajectories, metrics] = fullopt_multi_agent_planner(agents, e
     % --- Solver Options ---
     opts = struct;
     opts.ipopt.print_level = 0;     % 0=quiet, 3=default, 5=verbose
-    opts.ipopt.max_iter = 2000;     % Limit iterations
-    opts.ipopt.tol = 1e-6;          % Solver tolerance
+    opts.ipopt.max_iter = 4000;     % Limit iterations
+    opts.ipopt.tol = 1e-8;          % Solver tolerance
     opts.print_time = 1;
     opts.ipopt.warm_start_init_point = 'yes';
     opts.expand = true;
@@ -36,6 +36,7 @@ function [planned_trajectories, metrics] = fullopt_multi_agent_planner(agents, e
     fprintf('Time taken to formulate problem: %.2f seconds\n', formulation_time);
     % --- Solve the Parameterized NLP ---
     planned_trajectories = cell(length(agents), 1); % Initialize output
+
     try
         p0 = [w0; builder.ensemble_samples];
         sol = solver('x0', w0, 'lbx', builder.lbx, 'ubx', builder.ubx, 'p', p0, 'lbg', lbg, 'ubg', ubg);

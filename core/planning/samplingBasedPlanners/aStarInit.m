@@ -22,7 +22,7 @@ function [initPath, map] = aStarInit(agents, env_params, current_params, sim_par
     opts.X_lim = X_grid_contour;
     opts.Y_lim = Y_grid_contour;
     
-    inflate = (agent_params.safety_margin + agent_params.radius)*4;
+    inflate = (agent_params.safety_margin + agent_params.radius)*4/current_params.dc;
 
     mag = Current_Mag;
     % X_lim = env_params.x_limits; Y_lim = env_params.y_limits; 
@@ -131,7 +131,7 @@ else
     goal_centroid = mean(cat(2,agents.goal), 2);
     
     occupancyMap.setOccupancy(flipud(occupancyMap.getOccupancy))
-    occupancyMap.inflate(inflate+agent_params.formation_inter_agent_distance*2)
+    occupancyMap.inflate(inflate+agent_params.formation_inter_agent_distance*3/current_params.dc)
 
     planner = plannerAStarGrid(occupancyMap);
     planner.GCostFcn = @(pose1,pose2)oceanMovementCost(pose1,pose2,dt,opts);

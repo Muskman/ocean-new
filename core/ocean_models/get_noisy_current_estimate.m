@@ -30,7 +30,11 @@ function [estimated_current_cell, estimated_gradient_cell] = get_noisy_current_e
 
     if recreate_current
         fprintf('Creating/Recreating symbolic CasADi current function...\n');
-        [sym_ocean_current_func, sym_ocean_gradient_func] = create_symbolic_ocean_func(current_params, false); % Use SX for evaluation
+        if strcmp(env_params.type, 'real')
+            [sym_ocean_current_func, sym_ocean_gradient_func] = create_symbolic_ocean_func_real(current_params, false);
+        else
+            [sym_ocean_current_func, sym_ocean_gradient_func] = create_symbolic_ocean_func(current_params, false);
+        end
     end
     if recreate_gradient
          fprintf('Creating/Recreating symbolic CasADi gradient function...\n');

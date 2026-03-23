@@ -173,7 +173,11 @@ classdef ProblemBuilder < handle
         
         function setupOceanFunctions(obj)
             % Create ocean current functions
-            [obj.ocean_current_func, obj.ocean_gradient_func] = create_symbolic_ocean_func(obj.current_params, true);
+            if strcmp(obj.current_params.env_type, 'real')
+                [obj.ocean_current_func, obj.ocean_gradient_func] = create_symbolic_ocean_func_real(obj.current_params, true);
+            else
+                [obj.ocean_current_func, obj.ocean_gradient_func] = create_symbolic_ocean_func(obj.current_params, true);
+            end
         
             % Extract individual per-ensemble functions for optimization
             obj.createPerEnsembleFunctions();
@@ -227,7 +231,7 @@ classdef ProblemBuilder < handle
             end
 
             % use astar initial guess if specified
-            if strcmp(obj.sim_params.initial_guess, 'aStar')
+            if strcmp(obj.sim_params.initial_guess, 'astar')
                 [obj.P0, ~] = aStarInit(obj.agents, obj.env_params, obj.current_params, obj.sim_params, obj.agent_params);
             end
             
@@ -360,7 +364,7 @@ classdef ProblemBuilder < handle
                     end
                 end
             end
-            obj.symbolic_objective_template = symbolic_objective_template'*obj.ensemble_samples_sym/sum(obj.ensemble_samples_sym) + obj.agent_params.formation_weight*formation_objective_template + obj.agent_params.collision_weight*collision_objective_template;
+            obj.symbolic_objective_template = symbolic_objective_template'*obj.ensemble_samples_sym/sum(obj.ensemble_samples_sym) + obj.dt^2*obj.agent_params.formation_weight*formation_objective_template + obj.agent_params.collision_weight*collision_objective_template;
             
             obj.templates_built = true;
             fprintf('Symbolic templates built successfully.\n');
@@ -526,7 +530,7 @@ classdef ProblemBuilder < handle
                 end
                 
                 % Accumulate objective in symbolic template
-                obj.symbolic_objective_template = obj.symbolic_objective_template + sumsqr(disp_control_matrix) + obj.agent_params.formation_weight*formation_obj_k + obj.agent_params.collision_weight*collision_obj_k; % + (1-obj.gradient_tracking_weight) * (obj.z(2*obj.N_agents*k+1:2*obj.N_agents*(k+2))-grad_old(2*obj.N_agents*k+1:2*obj.N_agents*(k+2)))'*[P_k_plus_1;P_k] + obj.sim_params.mu * sumsqr(P_k - P0_k);
+                obj.symbolic_objective_template = obj.symbolic_objective_template + sumsqr(disp_control_matrix) + obj.dt^2*obj.agent_params.formation_weight*formation_obj_k + obj.agent_params.collision_weight*collision_obj_k; % + (1-obj.gradient_tracking_weight) * (obj.z(2*obj.N_agents*k+1:2*obj.N_agents*(k+2))-grad_old(2*obj.N_agents*k+1:2*obj.N_agents*(k+2)))'*[P_k_plus_1;P_k] + obj.sim_params.mu * sumsqr(P_k - P0_k);
                 
                 if obj.config.use_linear_approximation
                     Currents_at_P0_avg = obj.ensemble_current_funcs{obj.current_params.num_ensemble_members+1}(P0_k_matrix, k*obj.dt);

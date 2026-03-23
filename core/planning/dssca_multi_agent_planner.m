@@ -8,7 +8,7 @@ function [planned_trajectories, metrics] = dssca_multi_agent_planner(agents, env
     config = ProblemBuilder.getDefaultConfig();
     % You can customize configuration here if needed
     config.use_linear_approximation = true;
-    config.enable_formation_constraints = false;
+    % config.enable_formation_constraints = false;
     % config.enable_collision_constraints = false;
      
     builder = ProblemBuilderD(agents, env_params, current_params, sim_params, agent_params, config);
@@ -19,10 +19,10 @@ function [planned_trajectories, metrics] = dssca_multi_agent_planner(agents, env
     % --- Solver Options ---
     opts = struct;
     opts.ipopt.print_level = 0;     % 0=quiet, 3=default, 5=verbose
-    % opts.ipopt.max_iter = 2000;     % Limit iterations
-    % opts.ipopt.tol = 1e-6;          % Solver tolerance
+    opts.ipopt.max_iter = 2000;     % Limit iterations
+    opts.ipopt.tol = 1e-7;          % Solver tolerance
     % opts.print_time = 1;
-    % opts.ipopt.warm_start_init_point = 'yes';
+    opts.ipopt.warm_start_init_point = 'yes';
     opts.expand = true;
 
 
@@ -32,7 +32,8 @@ function [planned_trajectories, metrics] = dssca_multi_agent_planner(agents, env
     % opts.jit_options.flags = '-O3';
     % opts.jit_options.compiler = 'clang';
 
-    max_outer_iterations = sim_params.max_outer_iterations * length(agents);
+    max_outer_iterations = ceil(sim_params.max_outer_iterations * length(agents) * 1.5);
+    % sim_params.k_bar = sim_params.k_bar;
     
     % --- Start timing ---
     tic_formulation = tic; formulation_time = 0; solve_time = 0;

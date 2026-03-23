@@ -133,7 +133,11 @@ classdef SimulationVisualizer < handle
             caxis(obj.ax, [0, max(mag_limits(2), eps)*1.1]);
 
             % Initialize Current Vector Field (Quiver) on a potentially coarser grid 
-            nx_quiver = 20; ny_quiver = 20;
+            if strcmp(obj.env_params.type, 'sim')
+                nx_quiver = 20; ny_quiver = 20;
+            else
+                nx_quiver = 40; ny_quiver = 40;
+            end
             x_vec_quiver = linspace(obj.env_params.x_limits(1), obj.env_params.x_limits(2), nx_quiver);
             y_vec_quiver = linspace(obj.env_params.y_limits(1), obj.env_params.y_limits(2), ny_quiver);
             [obj.X_grid_quiver, obj.Y_grid_quiver] = meshgrid(x_vec_quiver, y_vec_quiver);
@@ -280,9 +284,9 @@ classdef SimulationVisualizer < handle
                     end
                 end
                 % Control Velocity Quiver
-                if ishandle(obj.control_vel_quivers(i)); ctrl_vel = agents(i).control_velocity; set(obj.control_vel_quivers(i), 'XData', pos_i(1), 'YData', pos_i(2), 'UData', ctrl_vel(1)*obj.sim_params.vis_vector_scale, 'VData', ctrl_vel(2)*obj.sim_params.vis_vector_scale); end
+                % if ishandle(obj.control_vel_quivers(i)); ctrl_vel = agents(i).control_velocity; set(obj.control_vel_quivers(i), 'XData', pos_i(1), 'YData', pos_i(2), 'UData', ctrl_vel(1)*obj.sim_params.vis_vector_scale, 'VData', ctrl_vel(2)*obj.sim_params.vis_vector_scale); end
                 % Estimated Current Quiver
-                if ishandle(obj.current_est_quivers(i)); est_curr = agents(i).estimated_current; set(obj.current_est_quivers(i), 'XData', pos_i(1), 'YData', pos_i(2), 'UData', est_curr(1)*obj.sim_params.vis_vector_scale, 'VData', est_curr(2)*obj.sim_params.vis_vector_scale); end
+                % if ishandle(obj.current_est_quivers(i)); est_curr = agents(i).estimated_current; set(obj.current_est_quivers(i), 'XData', pos_i(1), 'YData', pos_i(2), 'UData', est_curr(1)*obj.sim_params.vis_vector_scale, 'VData', est_curr(2)*obj.sim_params.vis_vector_scale); end
 
                  % Ensure agent elements stay on top
                  if ishandle(obj.agent_fill_plots(i)); uistack(obj.agent_fill_plots(i), 'top'); end

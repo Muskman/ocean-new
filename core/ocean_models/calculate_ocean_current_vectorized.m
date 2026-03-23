@@ -17,48 +17,54 @@ function [U_total, V_total] = calculate_ocean_current_vectorized(positions, time
     pos_x = positions(1, :); % Row vector of x coordinates
     pos_y = positions(2, :); % Row vector of y coordinates
 
-    for i = 1:length(current_params.vortices)
-        vortex = current_params.vortices(i);
-        x0 = vortex.center(1);
-        y0 = vortex.center(2);
-        Gamma = vortex.strength;
-        R_vortex = vortex.core_radius; % Renamed to avoid conflict with distance R
+    if strcmp(current_params.env_type, 'sim')
 
-        % Adjust vortex parameters for time variance
-        if strcmp(current_params.type, 'time_varying')
-            
-            vortex_end = current_params.vortices_end(i);   
-            x0_end = vortex_end.center(1);
-            y0_end = vortex_end.center(2);
-            Gamma_end = vortex_end.strength;
+        for i = 1:length(current_params.vortices)
+            vortex = current_params.vortices(i);
+            x0 = vortex.center(1);
+            y0 = vortex.center(2);
+            Gamma = vortex.strength;
+            R_vortex = vortex.core_radius; % Renamed to avoid conflict with distance R
 
-            x0 = x0 + (x0_end - x0) * time/current_params.T_final;
-            y0 = y0 + (y0_end - y0) * time/current_params.T_final;
-            Gamma = Gamma + (Gamma_end - Gamma) * time/current_params.T_final;
+            % Adjust vortex parameters for time variance
+            if strcmp(current_params.type, 'time_varying')
+                
+                vortex_end = current_params.vortices_end(i);   
+                x0_end = vortex_end.center(1);
+                y0_end = vortex_end.center(2);
+                Gamma_end = vortex_end.strength;
+
+                x0 = x0 + (x0_end - x0) * time/current_params.T_final;
+                y0 = y0 + (y0_end - y0) * time/current_params.T_final;
+                Gamma = Gamma + (Gamma_end - Gamma) * time/current_params.T_final;
+            end
+
+            % Calculate distances for all points relative to this vortex
+            dx = pos_x - x0; % 1xN
+            dy = pos_y - y0; % 1xN
+            r_sq = dx.^2 + dy.^2; % 1xN
+
+            % Calculate tangential velocity (Lamb-Oseen profile) - Handle singularity
+            v_theta = zeros(1, N_points);
+            valid_idx = r_sq > eps; % Indices where r_sq is not effectively zero
+            r_sq_valid = r_sq(valid_idx);
+            v_theta(valid_idx) = (Gamma ./ (2 * pi * sqrt(r_sq_valid))) .* (1 - exp(-r_sq_valid / R_vortex^2));
+
+            % Convert tangential velocity to Cartesian components (vectorized)
+            % u = -v_theta * sin(theta) = -v_theta * (dy / r)
+            % v =  v_theta * cos(theta) =  v_theta * (dx / r)
+            u_vortex = zeros(1, N_points);
+            v_vortex = zeros(1, N_points);
+            r_valid = sqrt(r_sq_valid);
+            u_vortex(valid_idx) = -v_theta(valid_idx) .* dy(valid_idx) ./ r_valid;
+            v_vortex(valid_idx) =  v_theta(valid_idx) .* dx(valid_idx) ./ r_valid;
+
+            % Accumulate contributions from this vortex
+            U_total = U_total + u_vortex;
+            V_total = V_total + v_vortex;
         end
-
-        % Calculate distances for all points relative to this vortex
-        dx = pos_x - x0; % 1xN
-        dy = pos_y - y0; % 1xN
-        r_sq = dx.^2 + dy.^2; % 1xN
-
-        % Calculate tangential velocity (Lamb-Oseen profile) - Handle singularity
-        v_theta = zeros(1, N_points);
-        valid_idx = r_sq > eps; % Indices where r_sq is not effectively zero
-        r_sq_valid = r_sq(valid_idx);
-        v_theta(valid_idx) = (Gamma ./ (2 * pi * sqrt(r_sq_valid))) .* (1 - exp(-r_sq_valid / R_vortex^2));
-
-        % Convert tangential velocity to Cartesian components (vectorized)
-        % u = -v_theta * sin(theta) = -v_theta * (dy / r)
-        % v =  v_theta * cos(theta) =  v_theta * (dx / r)
-        u_vortex = zeros(1, N_points);
-        v_vortex = zeros(1, N_points);
-        r_valid = sqrt(r_sq_valid);
-        u_vortex(valid_idx) = -v_theta(valid_idx) .* dy(valid_idx) ./ r_valid;
-        v_vortex(valid_idx) =  v_theta(valid_idx) .* dx(valid_idx) ./ r_valid;
-
-        % Accumulate contributions from this vortex
-        U_total = U_total + u_vortex;
-        V_total = V_total + v_vortex;
+    else
+        U_total = current_params.Uc(positions);
+        V_total = current_params.Vc(positions);
     end
 end 

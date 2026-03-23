@@ -1,6 +1,6 @@
 function [planned_trajectories, metrics] = astar_planner(agents, env_params, current_params, sim_params, agent_params)
 
-    sim_params.initial_guess = 'aStar';
+    sim_params.initial_guess = 'astar';
 
     builder = ProblemBuilder(agents, env_params, current_params, sim_params, agent_params, ProblemBuilder.getDefaultConfig());
     

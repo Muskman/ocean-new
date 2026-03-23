@@ -89,17 +89,17 @@ function all_metrics = run_simulation_case(sim_params, env_params, current_param
                     current_time = t_idx * local_sim_params.dt;
 
                     % 1. Get Noisy Estimates for All Agents
-                    current_agent_positions = cat(2, agents.position);
-                    [estimated_currents_cell, estimated_gradients_cell] = ...
-                        get_noisy_current_estimate(current_agent_positions, current_time, current_params, env_params);
+                    % current_agent_positions = cat(2, agents.position);
+                    % [estimated_currents_cell, estimated_gradients_cell] = ...
+                    %     get_noisy_current_estimate(current_agent_positions, current_time, current_params, env_params);
 
                     for i = 1:num_agents
-                        agents(i).estimated_current = estimated_currents_cell{i};
-                        if ~isempty(estimated_gradients_cell{i})
-                            agents(i).estimated_gradient = estimated_gradients_cell{i};
-                        else
+                        agents(i).estimated_current = [0;0];
+                        % if ~isempty(estimated_gradients_cell{i})
+                        %     agents(i).estimated_gradient = estimated_gradients_cell{i};
+                        % else
                             agents(i).estimated_gradient = zeros(2, 2);
-                        end
+                        % end
                     end
 
                     % 2. Plan Trajectories
